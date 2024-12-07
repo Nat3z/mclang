@@ -17,6 +17,8 @@ pub enum Tokens {
     If(Vec<Tokens>),
     Else(Vec<Tokens>),
     ElseIf(Vec<Tokens>),
+    And,
+    Or,
     Comma,
 
     Equivalence,

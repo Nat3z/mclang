@@ -184,11 +184,23 @@ impl Lexer {
                     },
                     "." => {
                         built_str.clear();
-                        let (statements, forwardness) = self.read_until_end();
+                        let (mut statements, forwardness) = self.read_until_end();
                         // exclude the semicolon
+                        // remove operands starting at && and to the end
+                        let mut point_to_grab = forwardness;
+                        for state in ["&&", "||", "==", ">", "<", ">=", "<=", "+", "-", "*", "/", "%", "^"] {
+                            if statements.contains(state) {
+                                point_to_grab = statements.find(state).unwrap();
+                                statements = statements.split_at(point_to_grab).0.to_string();
+                            }
+                        };
+
+                        // remove point to grab from forwardness
+                        let forwardness = point_to_grab;
+                        // let statements = statements.split_at(point_to_grab).0;
+                        println!("Statements: {}", statements);
                         let rev_string = statements.chars().rev().collect::<String>();
                         let has_semicolon = rev_string.trim().chars().next() == Some(';');
-
                         let statements: String = rev_string.replacen(';', "", 1)
                             .chars().rev().collect();
 
@@ -203,6 +215,13 @@ impl Lexer {
                         if has_semicolon {
                             self.tokens.push(Tokens::SemiColon);
                         }
+                    },
+                    "&&" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::And);
+                    },
+                    "||" => {
+                        self.tokens.push(Tokens::Or);
                     },
                     "," => {
                         built_str.clear();
@@ -245,7 +264,7 @@ impl Lexer {
 
                 // now peek to see if this is just a big symbol
                 let char = self.peek(1);
-                if built_str.trim().len() > 0 && 
+                if built_str.trim().len() > 0 &&
                     (self.column == self.raw_tokens[self.line - 1].len() 
                         || char == '.'
                         || char == '('
@@ -253,6 +272,8 @@ impl Lexer {
                         || char == ')'
                         || char == '='
                         || char == ','
+                        || (char == '&' && self.peek(2) == '&')
+                        || (char == '|' && self.peek(2) == '|')
                     ) {
                     self.tokens.push(Tokens::Symbol(built_str.trim().to_string()));
                     built_str.clear();
