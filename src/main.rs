@@ -1,9 +1,22 @@
+mod executor;
+
 mod lexer {
     pub mod lexer;
     pub mod tokens;
-    pub mod analyzer;
+}
+mod ast {
+    pub mod constructor;
+    pub mod operations;
+}
+
+mod compile {
+    pub mod compiler;
+}
+
+mod errors {
+    pub mod error;
 }
 
 fn main() {
-    println!("Hello, world!");
+    executor::run();
 }
