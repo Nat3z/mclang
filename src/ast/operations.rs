@@ -17,7 +17,7 @@ pub enum ASTOperation {
     Operation(Box<ASTOperation>, Operator, Box<ASTOperation>)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operator {
     Add,
     Subtract,
@@ -31,6 +31,7 @@ pub enum Operator {
     LessThan,
     GreaterThanEqual,
     LessThanEqual,
+    Assignment,
     And,
     Or,
     Not

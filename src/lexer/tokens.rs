@@ -13,6 +13,11 @@ pub enum Tokens {
     Symbol(String),
     Let(String),
     Assignment,
+    Add,
+    Subtract,
+    Divide,
+    Multiply,
+    Modulus,
 
     If(Vec<Tokens>),
     Else(Vec<Tokens>),

@@ -16,7 +16,10 @@ pub fn run() {
     let mut ast = AST::new(tokens.to_vec());
     ast.generate();
     println!("{:?}", ast.flush());
-    let mut compiler = Compiler::new(ast.flush().to_vec());
-    compiler.compile();
-    println!("{}", compiler.flush());
+    let mut compiler = Compiler::new(ast.flush().to_vec(), "test");
+    let mut scope = compiler.scopes[0].clone();
+    compiler.compile(&mut scope);
+    for (name, item) in compiler.flush() {
+        println!("\n--------------------\nNAME: {}\n{}", name, item);
+    }
 }

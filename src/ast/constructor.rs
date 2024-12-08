@@ -165,6 +165,31 @@ impl AST {
                     self.statements.push(ASTOperation::Create(obj_name, statements.to_vec()));
                 },
 
+                Tokens::Add => {
+                    let next_token = self.peek(1);
+                    let last_token = self.last(1);
+                    if next_token == Tokens::Assignment && discriminant(&last_token) == discriminant(&Tokens::Symbol("".to_string())) {
+                        self.statements.pop();
+                        if let Tokens::Symbol(reference) = last_token {
+                            self.index += 1;
+                            let (statements, forwardness) = self.get_tokens_until(Tokens::SemiColon);
+                            let statements = self.get_statements_from_tokens(&statements);
+                            self.index += forwardness;
+                            self.statements.push(ASTOperation::MutateVariable(
+                                reference.clone(), 
+                                vec![ ASTOperation::Operation(
+                                    Box::new(ASTOperation::Access(reference)),
+                                    Operator::Add,
+                                    Box::new(statements[0].clone())
+                                )]
+                            ));
+                        }
+                    }
+                    else {
+                        operand = Some(Operator::Add);
+                    }
+                },
+
                 Tokens::Parens(statement_tokens) => {
                     let statements = self.get_statements_from_tokens(&statement_tokens);
                     self.statements.push(ASTOperation::Set(statements.to_vec()));

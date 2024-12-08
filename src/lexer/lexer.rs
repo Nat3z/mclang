@@ -221,11 +221,32 @@ impl Lexer {
                         self.tokens.push(Tokens::And);
                     },
                     "||" => {
+                        built_str.clear();
                         self.tokens.push(Tokens::Or);
                     },
                     "," => {
                         built_str.clear();
                         self.tokens.push(Tokens::Comma);
+                    },
+                    "+" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::Add);
+                    },
+                    "-" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::Subtract);
+                    },
+                    "*" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::Multiply);
+                    },
+                    "/" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::Divide);
+                    },
+                    "%" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::Modulus);
                     },
                     "true" => {
                         built_str.clear();
@@ -272,6 +293,11 @@ impl Lexer {
                         || char == ')'
                         || char == '='
                         || char == ','
+                        || char == '+'
+                        || char == '-'
+                        || char == '*'
+                        || char == '/'
+                        || char == '%'
                         || (char == '&' && self.peek(2) == '&')
                         || (char == '|' && self.peek(2) == '|')
                     ) {

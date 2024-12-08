@@ -1,5 +1,8 @@
-let x = 0;
-let y = 0;
-let z = false;
+let x = 5;
+let y = 10;
+x += 10;
 
-z = true;
+if x == y && y == 50 {
+  let z = 1;
+  z += 2;
+}
