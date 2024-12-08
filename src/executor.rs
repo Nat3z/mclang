@@ -17,4 +17,6 @@ pub fn run() {
     ast.generate();
     println!("{:?}", ast.flush());
     let mut compiler = Compiler::new(ast.flush().to_vec());
+    compiler.compile();
+    println!("{}", compiler.flush());
 }

@@ -11,11 +11,14 @@ mod ast {
 
 mod compile {
     pub mod compiler;
+    pub mod mcstatements;
+    pub mod objects;
 }
 
 mod errors {
     pub mod error;
 }
+
 
 fn main() {
     executor::run();
