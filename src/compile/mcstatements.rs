@@ -1,12 +1,13 @@
-use std::{mem::discriminant, process::exit, rc::Rc};
+use std::{any::Any, collections::HashMap, process::exit, rc::Rc};
 
 use crate::ast::operations::Operator;
 
-use super::objects::{match_objects, Object, Objects};
+use super::{compiler::Scope, obj::std::VariableObject, objects::{mk_variable, Object, Objects}};
 
 #[derive(Clone, Debug)]
 pub enum Statements {
     Execute(Vec<ExecuteSteps>),
+    Raw(String),
 }
 #[derive(Clone, Debug)]
 pub enum ExecuteSteps {
@@ -14,6 +15,31 @@ pub enum ExecuteSteps {
     At(Objects),
     In(Objects),
     Compare(Objects, Operator, Objects)
+}
+
+#[derive(Clone, Debug)]
+pub struct MinecraftStatementObject {
+    pub value: Statements
+}
+
+impl Object for MinecraftStatementObject {
+    fn get_type(&self) -> Objects {
+        Objects::MCStatement(self.value.clone())
+    }
+    fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
+        let mut map = HashMap::new();
+        map.insert("value".to_string(), 
+            mk_variable(Objects::MCStatement(self.value.clone()), Objects::Unknown)
+        );
+        return map;
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn get_functions(&self) -> HashMap<String, Box<dyn Fn(Vec<Rc<dyn Object>>, Option<Rc<VariableObject>>) -> Rc<dyn Object>>> {
+        HashMap::new()
+    }
 }
 
 pub fn execute_step_str(step: ExecuteSteps) -> String {
@@ -126,6 +152,13 @@ pub fn execute_step_str(step: ExecuteSteps) -> String {
                         else { "" };
                         return format!("if score value {} matches {}", scoreboard_first_name, operand_equiv)
                     }
+                    else if let Objects::Boolean(bool) = second {
+                        let operand_equiv = if operand == Operator::Equal {
+                            &format!("{}", if bool { "1" } else { "0" })
+                        }
+                        else { "" };
+                        return format!("if score value {} matches {}", scoreboard_first_name, operand_equiv)
+                    }
                     else {
                         eprintln!("Not Variable");
                         exit(1);
@@ -148,4 +181,18 @@ pub fn execute_step_str(step: ExecuteSteps) -> String {
     }
 }
 
-
+pub fn compile_into_mcstatement(statement: Statements) -> (String, Option<Scope>) {
+    match statement {
+        Statements::Execute(steps) => {
+            let mut built_str = String::new();
+            for step in steps {
+                built_str.push_str(&execute_step_str(step));
+                built_str.push_str(" ");
+            }
+            return (built_str, None);
+        },
+        Statements::Raw(raw) => {
+            return (raw, None);
+        }
+    }
+}

@@ -41,7 +41,7 @@ impl Lexer {
             }
             built_str.push(token);
         }
-
+        
         if !built_str.contains(token) {
             std_error(StdErrors::SyntaxError(format!("Expected: {}", token), self.raw_tokens[self.line - 1].iter().collect(), self.line, self.column));
             exit(1);
@@ -73,12 +73,13 @@ impl Lexer {
             if token == '\0' {
                 break;
             }
-            if token == open_token {
-                counted_opens += 1;
-            }
+
             if token == opposite_token {
                 counted_opens -= 1;
             } 
+            else if token == open_token {
+                counted_opens += 1;
+            }
             built_str.push(token);
         }
 
@@ -86,6 +87,7 @@ impl Lexer {
         //     std_error(StdErrors::SyntaxError(format!("Expected: {}", open_token), self.raw_tokens[self.line - 1].iter().collect(), self.line, self.column));
         //     exit(1);
         // }
+        //
         if counted_opens > 0 {
             std_error(StdErrors::SyntaxError(format!("Opened token {} but did not close with {}", open_token, opposite_token), self.raw_tokens[self.line - 1].iter().collect(), self.line, self.column));
             exit(1);
@@ -114,7 +116,7 @@ impl Lexer {
                 }
                 built_str.push(char);
                 match built_str.trim_start() {
-                    "let" => {
+                    "let " => {
                         built_str.clear();
                         let (var_name, forwardness) = self.read_until("=");
                         self.column += forwardness;
@@ -132,7 +134,7 @@ impl Lexer {
                             self.tokens.push(Tokens::Assignment);
                         }
                     },
-                    "if" => {
+                    "if " => {
                         built_str.clear();
                         let (boolean, forwardness) = self.read_until("{");
                         self.column += forwardness;
@@ -143,6 +145,39 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::If(tokens));
+                    },
+                    "while " => {
+                        built_str.clear();
+                        let (statements, forwardness) = self.read_until("{");
+                        self.column += forwardness;
+                        // now split statements between the first colon
+                        let statements = statements.splitn(2, ":").collect::<Vec<&str>>();
+                        // make parser just get the name
+                        let name_statement = format!("{} =", statements[0]);
+                        // name parser
+                        let mut lexer = Lexer::new(name_statement.trim().to_string());
+                        lexer.tokenizer();
+                        let mut tokens = lexer.flush().to_vec();
+                        tokens.remove(tokens.len() - 1);
+                        tokens.remove(tokens.len() - 1);
+                        if tokens.len() != 2 {
+                            eprintln!("More than 1 token in while loop declaration.");
+                            exit(1);
+                        }
+                        let let_name: String = match &tokens[0] {
+                            Tokens::Let(name) => name,
+                            _ => ""
+                        }.to_string();
+                        if let_name.is_empty() {
+                            eprintln!("Missing let token name.");
+                            exit(1);
+                        }
+                        let mut lexer = Lexer::new(statements[1].trim().to_string());
+                        lexer.tokenizer();
+                        let mut tokens = lexer.flush().to_vec();
+                        tokens.remove(tokens.len() - 1);
+                        tokens.remove(tokens.len() - 1);
+                        self.tokens.push(Tokens::While(let_name, tokens));
                     },
                     "{" => {
                         built_str.clear();
@@ -164,7 +199,26 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::Parens(tokens));
                     },
-                    "new" => {
+                    "\"" => {
+                        built_str.clear();
+                        let (string, forwardness) = self.read_until("\"");
+                        self.column += forwardness + 1;
+                        self.tokens.push(Tokens::DblQuote(string));
+                    },
+                    "[" => {
+                        built_str.clear();
+                        let (inside_parens, forwardness) = self.read_until_last('[', ']');
+
+                        self.column += forwardness;
+                        let mut lexer = Lexer::new(inside_parens.trim().to_string());
+                        lexer.tokenizer();
+                        let mut tokens = lexer.flush().to_vec();
+                        // remove the last 2 tokens as those are just EOL EOF
+                        tokens.remove(tokens.len() - 1);
+                        tokens.remove(tokens.len() - 1);
+                        self.tokens.push(Tokens::Bracket(tokens));
+                    }
+                    "new " => {
                         built_str.clear();
                         let (object_name, forwardness) = self.read_until("(");
                         // add forwardness including the "(" as read_until does not include it but

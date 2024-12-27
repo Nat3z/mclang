@@ -7,6 +7,7 @@ pub enum ASTOperation {
     CodeBlock(Vec<ASTOperation>),
     Access(String),
     AssignVariable(String, Vec<ASTOperation>),
+    StaticVariable(String, Vec<ASTOperation>),
     LiteralString(String),
     LiteralNumber(i64),
     LiteralBool(bool),
@@ -14,6 +15,7 @@ pub enum ASTOperation {
     AccessPart(Box<ASTOperation>),
     UseVariable(String, Box<ASTOperation>),
     If(Vec<ASTOperation>, Box<ASTOperation>),
+    While(String, Vec<ASTOperation>, Box<ASTOperation>),
     Operation(Box<ASTOperation>, Operator, Box<ASTOperation>)
 }
 

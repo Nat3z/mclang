@@ -88,14 +88,28 @@ impl AST {
                         eprintln!("Expected assignment operator.");
                         exit(1);
                     }
+                    // check the name to see if it's a static variable
                     self.index += 1;
                     let (statements, forwardness) = self.get_tokens_until(Tokens::SemiColon);
                     let statements = self.get_statements_from_tokens(&statements);
                     self.index += forwardness;
-                    self.statements.push(ASTOperation::AssignVariable(name, statements.to_vec()));
+
+                    if name.starts_with("*") {
+                        self.statements.push(ASTOperation::StaticVariable(name.replacen("*", "", 1), statements.to_vec()));
+                    }
+                    else {
+                        self.statements.push(ASTOperation::AssignVariable(name, statements.to_vec()));
+                    }
+                },
+                Tokens::Bracket(tokens) => {
+                    let statements = self.get_statements_from_tokens(&tokens);
+                    self.statements.push(ASTOperation::Set(statements));
                 },
                 Tokens::Number(str) => {
                     self.statements.push(ASTOperation::LiteralNumber(str.parse().unwrap()));
+                },
+                Tokens::DblQuote(str) => {
+                    self.statements.push(ASTOperation::LiteralString(str));
                 },
                 Tokens::Bool(bool) => {
                     self.statements.push(ASTOperation::LiteralBool(bool));
@@ -156,6 +170,23 @@ impl AST {
                         Box::new(ASTOperation::CodeBlock(statements.to_vec()))
                     ));
                 },
+                Tokens::While(name, iterator_tokens) => {
+                    let iterator_statements = self.get_statements_from_tokens(&iterator_tokens);
+                    // expect a Left curly brace
+                    if self.peek(1) != Tokens::LBrace {
+                        eprintln!("Expected Left curly brace.");
+                        exit(1);
+                    }
+                    self.index += 1;
+                    let (tokens, forwardness) = self.get_tokens_until(Tokens::RBrace);
+                    let statements = self.get_statements_from_tokens(&tokens);
+                    self.index += forwardness;
+                    self.statements.push(ASTOperation::While(
+                        name,
+                        iterator_statements.to_vec(),
+                        Box::new(ASTOperation::CodeBlock(statements.to_vec()))
+                    ));
+                },
                 Tokens::Period(statements) => {
                     let statements = self.get_statements_from_tokens(&statements);
                     self.statements.push(ASTOperation::AccessPart(Box::new(statements[0].clone())));
@@ -189,6 +220,30 @@ impl AST {
                         operand = Some(Operator::Add);
                     }
                 },
+                Tokens::Subtract => {
+                    let next_token = self.peek(1);
+                    let last_token = self.last(1);
+                    if next_token == Tokens::Assignment && discriminant(&last_token) == discriminant(&Tokens::Symbol("".to_string())) {
+                        self.statements.pop();
+                        if let Tokens::Symbol(reference) = last_token {
+                            self.index += 1;
+                            let (statements, forwardness) = self.get_tokens_until(Tokens::SemiColon);
+                            let statements = self.get_statements_from_tokens(&statements);
+                            self.index += forwardness;
+                            self.statements.push(ASTOperation::MutateVariable(
+                                reference.clone(), 
+                                vec![ ASTOperation::Operation(
+                                    Box::new(ASTOperation::Access(reference)),
+                                    Operator::Subtract,
+                                    Box::new(statements[0].clone())
+                                )]
+                            ));
+                        }
+                    }
+                    else {
+                        operand = Some(Operator::Subtract);
+                    }
+                }
 
                 Tokens::Parens(statement_tokens) => {
                     let statements = self.get_statements_from_tokens(&statement_tokens);

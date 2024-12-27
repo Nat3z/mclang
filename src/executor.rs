@@ -15,7 +15,7 @@ pub fn run() {
     let tokens = lexer.flush();
     let mut ast = AST::new(tokens.to_vec());
     ast.generate();
-    println!("{:?}", ast.flush());
+    println!("{:#?}", ast.flush());
     let mut compiler = Compiler::new(ast.flush().to_vec(), "test");
     let mut scope = compiler.scopes[0].clone();
     compiler.compile(&mut scope);

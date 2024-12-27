@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tokens {
     Parens(Vec<Tokens>),
+    Bracket(Vec<Tokens>),
     RBrace,
     LBrace,
     SemiColon,
@@ -22,6 +23,7 @@ pub enum Tokens {
     If(Vec<Tokens>),
     Else(Vec<Tokens>),
     ElseIf(Vec<Tokens>),
+    While(String, Vec<Tokens>),
     And,
     Or,
     Comma,

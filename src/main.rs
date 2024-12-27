@@ -10,6 +10,13 @@ mod ast {
 }
 
 mod compile {
+    mod obj {
+        pub mod entity;
+        pub mod basic;
+        pub mod scoreboard;
+        pub mod std;
+        pub mod blockpos;
+    }
     pub mod compiler;
     pub mod mcstatements;
     pub mod objects;
