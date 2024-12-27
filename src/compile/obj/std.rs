@@ -240,7 +240,7 @@ pub fn compile_into_while_loop(
     name: String,
     set: Vec<Rc<dyn Object>>,
     code_block: Box<ASTOperation>,
-    scope: &Scope,
+    scope: &mut Scope,
     compiler: &mut Compiler,
 ) -> String {
     let mut built_str = String::new();
@@ -260,7 +260,7 @@ pub fn compile_into_while_loop(
         if let Objects::Array(set) = set[0].get_type() {
             for item in set {
                 let mut inline_scope = Scope::new(
-                    format!("{}.{}", scope.name, compiler.scopes.len()),
+                    format!("{}.{}", scope.name, scope.scopes.len()),
                     compiler.namespace.clone(),
                     codes.clone(),
                 );
@@ -284,7 +284,7 @@ pub fn compile_into_while_loop(
                     },
                 );
                 compiler.compile(&mut inline_scope);
-                compiler.scopes.push(inline_scope.clone());
+                scope.scopes.push(inline_scope.clone());
                 built_str.push_str(&format!(
                     "\nfunction {}:{}",
                     compiler.namespace, inline_scope.name
@@ -338,7 +338,7 @@ pub fn compile_into_if_statement(
                 }
             }
             let mut inline_scope = Scope::new(
-                format!("{}.{}", scope.name, compiler.scopes.len()),
+                format!("{}.{}", scope.name, scope.scopes.len()),
                 compiler.namespace.clone(),
                 codes,
             );

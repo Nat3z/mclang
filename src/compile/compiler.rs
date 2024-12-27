@@ -28,6 +28,7 @@ pub struct Scope {
     pub variables: HashMap<String, Variable>,
     pub statements: Vec<ASTOperation>,
     pub namespace: String,
+    pub scopes: Vec<Scope>,
     pub name: String,
 }
 #[derive(Clone, Debug)]
@@ -51,7 +52,7 @@ impl Compiler {
 
     pub fn compile_into(
         &mut self,
-        scope: &Scope,
+        scope: &mut Scope,
         value: Rc<dyn Object>,
     ) -> (String, Option<Scope>) {
         match value.get_type() {
@@ -87,12 +88,12 @@ impl Compiler {
         while current_scope.statements.len() > index {
             let current_statement = current_scope.statements[index].clone();
             let value = current_scope.execute(&current_statement, None);
-            let (compiled_value, mut new_scope) = self.compile_into(&current_scope, value);
+            let (compiled_value, mut new_scope) = self.compile_into(current_scope, value);
             output_str.push_str(&format!("\n{}", &compiled_value));
 
             index += 1;
             if new_scope.is_some() {
-                self.scopes.push(new_scope.clone().unwrap());
+                current_scope.scopes.push(new_scope.clone().unwrap());
                 self.compile(new_scope.as_mut().unwrap());
             }
         }
@@ -111,6 +112,7 @@ impl Scope {
             variables: HashMap::new(),
             statements,
             namespace,
+            scopes: vec![],
             name,
         }
     }
