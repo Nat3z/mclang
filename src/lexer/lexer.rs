@@ -8,7 +8,7 @@ pub struct Lexer {
     raw_tokens: Vec<Vec<char>>,
     line: usize,
     column: usize,
-    tokens: Vec<Tokens> 
+    tokens: Vec<Tokens>,
 }
 
 impl Lexer {
@@ -17,10 +17,15 @@ impl Lexer {
         for line in file.split("\n").collect::<Vec<&str>>() {
             raw_tokens.push(line.chars().collect());
         }
-        Lexer { raw_tokens, line: 0usize, column: 0usize, tokens: vec![] }
+        Lexer {
+            raw_tokens,
+            line: 0usize,
+            column: 0usize,
+            tokens: vec![],
+        }
     }
     pub fn flush(&self) -> &Vec<Tokens> {
-        &self.tokens 
+        &self.tokens
     }
 
     pub fn peek(&self, forward: usize) -> char {
@@ -41,12 +46,17 @@ impl Lexer {
             }
             built_str.push(token);
         }
-        
+
         if !built_str.contains(token) {
-            std_error(StdErrors::SyntaxError(format!("Expected: {}", token), self.raw_tokens[self.line - 1].iter().collect(), self.line, self.column));
+            std_error(StdErrors::SyntaxError(
+                format!("Expected: {}", token),
+                self.raw_tokens[self.line - 1].iter().collect(),
+                self.line,
+                self.column,
+            ));
             exit(1);
         }
-        return (built_str.replace(token, ""), tracked_col - 1)
+        return (built_str.replace(token, ""), tracked_col - 1);
     }
 
     pub fn read_until_end(&self) -> (String, usize) {
@@ -60,7 +70,7 @@ impl Lexer {
             }
             built_str.push(token);
         }
-        return (built_str, tracked_col)
+        return (built_str, tracked_col);
     }
 
     pub fn read_until_last(&self, open_token: char, opposite_token: char) -> (String, usize) {
@@ -76,8 +86,7 @@ impl Lexer {
 
             if token == opposite_token {
                 counted_opens -= 1;
-            } 
-            else if token == open_token {
+            } else if token == open_token {
                 counted_opens += 1;
             }
             built_str.push(token);
@@ -89,17 +98,39 @@ impl Lexer {
         // }
         //
         if counted_opens > 0 {
-            std_error(StdErrors::SyntaxError(format!("Opened token {} but did not close with {}", open_token, opposite_token), self.raw_tokens[self.line - 1].iter().collect(), self.line, self.column));
+            std_error(StdErrors::SyntaxError(
+                format!(
+                    "Opened token {} but did not close with {}",
+                    open_token, opposite_token
+                ),
+                self.raw_tokens[self.line - 1].iter().collect(),
+                self.line,
+                self.column,
+            ));
             exit(1);
         }
         if counted_opens < 0 {
-            std_error(StdErrors::SyntaxError(format!("Closed token {} but did not open with {}", opposite_token, open_token), self.raw_tokens[self.line - 1].iter().collect(), self.line, self.column));
+            std_error(StdErrors::SyntaxError(
+                format!(
+                    "Closed token {} but did not open with {}",
+                    opposite_token, open_token
+                ),
+                self.raw_tokens[self.line - 1].iter().collect(),
+                self.line,
+                self.column,
+            ));
             exit(1);
         }
 
-        let new_str = built_str.chars().rev().collect::<String>()
-            .replacen(opposite_token, "", 1).chars().rev().collect::<String>();
-        return (new_str.trim().to_string(), tracked_col)
+        let new_str = built_str
+            .chars()
+            .rev()
+            .collect::<String>()
+            .replacen(opposite_token, "", 1)
+            .chars()
+            .rev()
+            .collect::<String>();
+        return (new_str.trim().to_string(), tracked_col);
     }
 
     pub fn tokenizer(&mut self) {
@@ -121,7 +152,7 @@ impl Lexer {
                         let (var_name, forwardness) = self.read_until("=");
                         self.column += forwardness;
                         self.tokens.push(Tokens::Let(var_name.trim().to_string()));
-                    },
+                    }
                     "=" => {
                         // this means that this is an equivalence operator
                         built_str.clear();
@@ -133,7 +164,7 @@ impl Lexer {
                         else {
                             self.tokens.push(Tokens::Assignment);
                         }
-                    },
+                    }
                     "if " => {
                         built_str.clear();
                         let (boolean, forwardness) = self.read_until("{");
@@ -145,13 +176,13 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::If(tokens));
-                    },
+                    }
                     "while " => {
                         built_str.clear();
                         let (statements, forwardness) = self.read_until("{");
                         self.column += forwardness;
                         // now split statements between the first colon
-                        let statements = statements.splitn(2, ":").collect::<Vec<&str>>();
+                        let statements = statements.splitn(2, "=").collect::<Vec<&str>>();
                         // make parser just get the name
                         let name_statement = format!("{} =", statements[0]);
                         // name parser
@@ -166,8 +197,9 @@ impl Lexer {
                         }
                         let let_name: String = match &tokens[0] {
                             Tokens::Let(name) => name,
-                            _ => ""
-                        }.to_string();
+                            _ => "",
+                        }
+                        .to_string();
                         if let_name.is_empty() {
                             eprintln!("Missing let token name.");
                             exit(1);
@@ -178,15 +210,15 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::While(let_name, tokens));
-                    },
+                    }
                     "{" => {
                         built_str.clear();
                         self.tokens.push(Tokens::LBrace);
-                    },
+                    }
                     "}" => {
                         built_str.clear();
                         self.tokens.push(Tokens::RBrace);
-                    },
+                    }
                     "(" => {
                         built_str.clear();
                         let (boolean, forwardness) = self.read_until_last('(', ')');
@@ -198,13 +230,13 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::Parens(tokens));
-                    },
+                    }
                     "\"" => {
                         built_str.clear();
                         let (string, forwardness) = self.read_until("\"");
                         self.column += forwardness + 1;
                         self.tokens.push(Tokens::DblQuote(string));
-                    },
+                    }
                     "[" => {
                         built_str.clear();
                         let (inside_parens, forwardness) = self.read_until_last('[', ']');
@@ -234,20 +266,23 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         // tokens.remove(tokens.len() - 1);
-                        self.tokens.push(Tokens::New(object_name.trim().to_string(), tokens));
-                    },
+                        self.tokens
+                            .push(Tokens::New(object_name.trim().to_string(), tokens));
+                    }
                     "." => {
                         built_str.clear();
                         let (mut statements, forwardness) = self.read_until_end();
                         // exclude the semicolon
                         // remove operands starting at && and to the end
                         let mut point_to_grab = forwardness;
-                        for state in ["&&", "||", "==", ">", "<", ">=", "<=", "+", "-", "*", "/", "%", "^"] {
+                        for state in [
+                            "&&", "||", "==", ">", "<", ">=", "<=", "+", "-", "*", "/", "%", "^",
+                        ] {
                             if statements.contains(state) {
                                 point_to_grab = statements.find(state).unwrap();
                                 statements = statements.split_at(point_to_grab).0.to_string();
                             }
-                        };
+                        }
 
                         // remove point to grab from forwardness
                         let forwardness = point_to_grab;
@@ -255,68 +290,66 @@ impl Lexer {
                         println!("Statements: {}", statements);
                         let rev_string = statements.chars().rev().collect::<String>();
                         let has_semicolon = rev_string.trim().chars().next() == Some(';');
-                        let statements: String = rev_string.replacen(';', "", 1)
-                            .chars().rev().collect();
+                        let statements: String =
+                            rev_string.replacen(';', "", 1).chars().rev().collect();
 
                         self.column += forwardness;
                         let mut lexer = Lexer::new(statements.trim().to_string());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
-                        // remove the last 2 tokens as those are just EOL EOF 
+                        // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::Period(tokens));
                         if has_semicolon {
                             self.tokens.push(Tokens::SemiColon);
                         }
-                    },
+                    }
                     "&&" => {
                         built_str.clear();
                         self.tokens.push(Tokens::And);
-                    },
+                    }
                     "||" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Or);
-                    },
+                    }
                     "," => {
                         built_str.clear();
                         self.tokens.push(Tokens::Comma);
-                    },
+                    }
                     "+" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Add);
-                    },
+                    }
                     "-" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Subtract);
-                    },
+                    }
                     "*" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Multiply);
-                    },
+                    }
                     "/" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Divide);
-                    },
+                    }
                     "%" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Modulus);
-                    },
+                    }
                     "true" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Bool(true));
-                    },
+                    }
                     "false" => {
                         built_str.clear();
                         self.tokens.push(Tokens::Bool(false));
-                    },
+                    }
                     ";" => {
                         built_str.clear();
                         self.tokens.push(Tokens::SemiColon);
-                    },
-                    _ => {
-
                     }
+                    _ => {}
                 }
                 // additionally check if the built_str is a number
                 if built_str.trim_start().parse::<i32>().is_ok() {
@@ -333,14 +366,15 @@ impl Lexer {
                         built_str.push(token);
                     }
                     self.column += tracked_col - 1;
-                    self.tokens.push(Tokens::Number(okay_number.trim().to_string()));
+                    self.tokens
+                        .push(Tokens::Number(okay_number.trim().to_string()));
                     built_str.clear();
                 }
 
                 // now peek to see if this is just a big symbol
                 let char = self.peek(1);
-                if built_str.trim().len() > 0 &&
-                    (self.column == self.raw_tokens[self.line - 1].len() 
+                if built_str.trim().len() > 0
+                    && (self.column == self.raw_tokens[self.line - 1].len()
                         || char == '.'
                         || char == '('
                         || char == ';'
@@ -353,16 +387,22 @@ impl Lexer {
                         || char == '/'
                         || char == '%'
                         || (char == '&' && self.peek(2) == '&')
-                        || (char == '|' && self.peek(2) == '|')
-                    ) {
-                    self.tokens.push(Tokens::Symbol(built_str.trim().to_string()));
+                        || (char == '|' && self.peek(2) == '|'))
+                {
+                    self.tokens
+                        .push(Tokens::Symbol(built_str.trim().to_string()));
                     built_str.clear();
                 }
             }
             self.tokens.push(Tokens::EOL);
             if built_str.trim().len() > 0 {
                 println!("{:?}", self.tokens);
-                std_error(StdErrors::SyntaxError("Unknown token".to_string(), raw_line.iter().collect(), self.line, self.column));
+                std_error(StdErrors::SyntaxError(
+                    "Unknown token".to_string(),
+                    raw_line.iter().collect(),
+                    self.line,
+                    self.column,
+                ));
                 eprintln!("{}", built_str);
                 exit(1);
             }

@@ -1,2 +1,4 @@
-let x = [ new Entity("@a") ];
-x._0.kill();
+while let x = [ new Entity("@a"), new Entity("@p"), new Entity("@s"), new Entity("@e") ] {
+  x.kill();
+  x.tp(new BlockPos(0, 0, 0));
+}
