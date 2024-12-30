@@ -2,7 +2,11 @@ use std::{any::Any, collections::HashMap, process::exit, rc::Rc};
 
 use crate::ast::operations::Operator;
 
-use super::{compiler::Scope, obj::std::VariableObject, objects::{mk_variable, Object, Objects}};
+use super::{
+    compiler::Scope,
+    obj::{scoreboard::ScoreboardPlayerPairObject, std::VariableObject},
+    objects::{mk_variable, Object, Objects},
+};
 
 #[derive(Clone, Debug)]
 pub enum Statements {
@@ -14,12 +18,12 @@ pub enum ExecuteSteps {
     As(Objects),
     At(Objects),
     In(Objects),
-    Compare(Objects, Operator, Objects)
+    Compare(Objects, Operator, Objects),
 }
 
 #[derive(Clone, Debug)]
 pub struct MinecraftStatementObject {
-    pub value: Statements
+    pub value: Statements,
 }
 
 impl Object for MinecraftStatementObject {
@@ -28,8 +32,9 @@ impl Object for MinecraftStatementObject {
     }
     fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
         let mut map = HashMap::new();
-        map.insert("value".to_string(), 
-            mk_variable(Objects::MCStatement(self.value.clone()), Objects::Unknown)
+        map.insert(
+            "value".to_string(),
+            mk_variable(Objects::MCStatement(self.value.clone()), Objects::Unknown),
         );
         return map;
     }
@@ -37,7 +42,12 @@ impl Object for MinecraftStatementObject {
         self
     }
 
-    fn get_functions(&self) -> HashMap<String, Box<dyn Fn(Vec<Rc<dyn Object>>, Option<Rc<VariableObject>>) -> Rc<dyn Object>>> {
+    fn get_functions(
+        &self,
+    ) -> HashMap<
+        String,
+        Box<dyn Fn(Vec<Rc<dyn Object>>, Option<Rc<VariableObject>>) -> Rc<dyn Object>>,
+    > {
         HashMap::new()
     }
 }
@@ -46,30 +56,26 @@ pub fn execute_step_str(step: ExecuteSteps) -> String {
     match step {
         ExecuteSteps::As(entity) => {
             if let Objects::Entity(selector) = entity {
-                return format!("as {}", selector)
-            }
-            else {
+                return format!("as {}", selector);
+            } else {
                 eprintln!("Incorrect argument");
                 exit(1);
             }
-        },
+        }
         ExecuteSteps::At(entity) => {
             if let Objects::Entity(selector) = entity {
-                return format!("at {}", selector)
-            }
-            else {
+                return format!("at {}", selector);
+            } else {
                 eprintln!("Incorrect argument");
                 exit(1);
             }
-        },
+        }
         ExecuteSteps::Compare(first, operand, second) => {
             if let Objects::MCStatement(statement_first) = &first {
                 let mut parts: Vec<String> = vec![];
                 if let Statements::Execute(steps) = statement_first {
                     parts.push(execute_step_str(steps[0].clone()));
-
-                }
-                else {
+                } else {
                     eprintln!("Invalid value");
                     exit(1);
                 }
@@ -85,35 +91,73 @@ pub fn execute_step_str(step: ExecuteSteps) -> String {
                                     full_str.push_str(&part);
                                 }
                                 return full_str.trim().to_string();
-                            },
+                            }
                             Operator::Or => {
                                 let mut full_str = String::new();
                                 for part in parts {
                                     full_str.push_str("[OR]");
                                     full_str.push_str(&part);
                                 }
-                                return full_str.trim().to_string()
-                            },
-                            _ => {
-                                return String::new()
+                                return full_str.trim().to_string();
                             }
+                            _ => return String::new(),
                         }
-
-                    }
-                    else {
+                    } else {
                         eprintln!("Invalid value");
                         exit(1);
                     }
                 }
             }
             if let Objects::Variable(value, scoreboard) = first {
-
-                if let Objects::Scoreboard(scoreboard_first_name, objective_first) = *scoreboard {
+                if let Objects::Scoreboard(scoreboard_first_name, _, first_objective_type) =
+                    *scoreboard
+                {
+                    let first_scoreboard_pair: Option<ScoreboardPlayerPairObject> = match *value {
+                        Objects::Number(_) | Objects::Boolean(_) => {
+                            Some(ScoreboardPlayerPairObject {
+                                objective_type: *first_objective_type.clone(),
+                                objective_name: scoreboard_first_name.clone(),
+                                player_name: "value".to_string(),
+                            })
+                        }
+                        Objects::ScoreboardPlayerPair(
+                            objective_name,
+                            player_name,
+                            objective_type,
+                        ) => Some(ScoreboardPlayerPairObject {
+                            objective_type: *objective_type.clone(),
+                            objective_name: objective_name.clone(),
+                            player_name: player_name.clone(),
+                        }),
+                        _ => None,
+                    };
                     if let Objects::Variable(value_second, scoreboard_second) = second {
-
-                        if let Objects::Scoreboard(scoreboard_second_name, objective_second) = *scoreboard_second {
-                            match *value_second {
-                                Objects::Number(_) | Objects::Boolean(_) => {
+                        if let Objects::Scoreboard(scoreboard_second_name, _, _) =
+                            *scoreboard_second.clone()
+                        {
+                            println!("{:?} {:?}", value_second, scoreboard_second);
+                            let second_scoreboard_pair: Option<ScoreboardPlayerPairObject> =
+                                match *value_second {
+                                    Objects::Number(_) | Objects::Boolean(_) => {
+                                        Some(ScoreboardPlayerPairObject {
+                                            objective_type: *first_objective_type.clone(),
+                                            objective_name: scoreboard_second_name.clone(),
+                                            player_name: "value".to_string(),
+                                        })
+                                    }
+                                    Objects::ScoreboardPlayerPair(
+                                        objective_name,
+                                        player_name,
+                                        objective_type,
+                                    ) => Some(ScoreboardPlayerPairObject {
+                                        objective_type: *objective_type.clone(),
+                                        objective_name: objective_name.clone(),
+                                        player_name: player_name.clone(),
+                                    }),
+                                    _ => None,
+                                };
+                            if let Some(first_scoreboard_pair) = first_scoreboard_pair {
+                                if let Some(second_scoreboard_pair) = second_scoreboard_pair {
                                     let operand_equiv = if operand == Operator::Equal {
                                         "="
                                     } else if operand == Operator::GreaterThanEqual {
@@ -124,57 +168,80 @@ pub fn execute_step_str(step: ExecuteSteps) -> String {
                                         "<"
                                     } else if operand == Operator::GreaterThan {
                                         ">"
-                                    } else { "" };
-                                    return format!("if score value {} {} value {}", scoreboard_first_name, operand_equiv, scoreboard_second_name)
-                                },
-                                _ => {
-                                    return "".to_string()
+                                    } else {
+                                        ""
+                                    };
+                                    return format!(
+                                        "if score {} {} {} {} {}",
+                                        first_scoreboard_pair.player_name,
+                                        first_scoreboard_pair.objective_name,
+                                        operand_equiv,
+                                        first_scoreboard_pair.player_name,
+                                        second_scoreboard_pair.objective_name
+                                    );
+                                } else {
+                                    eprintln!("Incorrect comparison. (Missing second scoreboard)");
+                                    exit(1);
                                 }
+                            } else {
+                                eprintln!("Incorrect comparison. (Missing first scoreboard)");
+                                exit(1);
                             }
-                        }
-                        else {
+                        } else {
                             eprintln!("Incorrect scoreboard type.");
                             exit(1);
                         }
-                    }
-                    else if let Objects::Number(num) = second {
-                        let operand_equiv = if operand == Operator::Equal {
-                            &format!("{}", num)
-                        } else if operand == Operator::GreaterThan {
-                            &format!("{}..", num + 1)
-                        } else if operand == Operator::LessThan {
-                            &format!("..{}", num + 1)
-                        } else if operand == Operator::GreaterThanEqual {
-                            &format!("{}..", num)
-                        } else if operand == Operator::LessThanEqual {
-                            &format!("..{}", num)
+                    } else if let Objects::Number(num) = second {
+                        if let Some(first_scoreboard_pair) = first_scoreboard_pair {
+                            let operand_equiv = if operand == Operator::Equal {
+                                &format!("{}", num)
+                            } else if operand == Operator::GreaterThan {
+                                &format!("{}..", num + 1)
+                            } else if operand == Operator::LessThan {
+                                &format!("..{}", num + 1)
+                            } else if operand == Operator::GreaterThanEqual {
+                                &format!("{}..", num)
+                            } else if operand == Operator::LessThanEqual {
+                                &format!("..{}", num)
+                            } else {
+                                ""
+                            };
+
+                            println!("{:?} {:?}", first_scoreboard_pair, operand_equiv);
+                            return format!(
+                                "if score {} {} matches {}",
+                                first_scoreboard_pair.player_name,
+                                first_scoreboard_pair.objective_name,
+                                operand_equiv
+                            );
+                        } else {
+                            eprintln!("Incorrect comparison.");
+                            exit(1);
                         }
-                        else { "" };
-                        return format!("if score value {} matches {}", scoreboard_first_name, operand_equiv)
-                    }
-                    else if let Objects::Boolean(bool) = second {
+                    } else if let Objects::Boolean(bool) = second {
                         let operand_equiv = if operand == Operator::Equal {
                             &format!("{}", if bool { "1" } else { "0" })
-                        }
-                        else { "" };
-                        return format!("if score value {} matches {}", scoreboard_first_name, operand_equiv)
-                    }
-                    else {
+                        } else {
+                            ""
+                        };
+                        return format!(
+                            "if score value {} matches {}",
+                            scoreboard_first_name, operand_equiv
+                        );
+                    } else {
                         eprintln!("Not Variable");
                         exit(1);
                     }
-                }
-                else {
+                } else {
                     eprintln!("Incorrect scoreboard type.");
                     exit(1);
                 }
-            }
-            else {
+            } else {
                 println!("ACTUAL: {:?}", first);
                 eprintln!("Make a variable the first thing.");
                 exit(1);
             }
-        },
+        }
         _ => {
             return "".to_string();
         }
@@ -190,7 +257,7 @@ pub fn compile_into_mcstatement(statement: Statements) -> (String, Option<Scope>
                 built_str.push_str(" ");
             }
             return (built_str, None);
-        },
+        }
         Statements::Raw(raw) => {
             return (raw, None);
         }

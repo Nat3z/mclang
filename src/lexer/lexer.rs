@@ -165,6 +165,28 @@ impl Lexer {
                             self.tokens.push(Tokens::Assignment);
                         }
                     }
+                    "!=" => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::NotEqual);
+                    }
+                    ">" => {
+                        built_str.clear();
+                        if self.peek(1) == '=' {
+                            self.column += 1;
+                            self.tokens.push(Tokens::GreaterThanEqual);
+                        } else {
+                            self.tokens.push(Tokens::GreaterThan);
+                        }
+                    }
+                    "<" => {
+                        built_str.clear();
+                        if self.peek(1) == '=' {
+                            self.column += 1;
+                            self.tokens.push(Tokens::LesserThanEqual);
+                        } else {
+                            self.tokens.push(Tokens::LesserThan);
+                        }
+                    }
                     "if " => {
                         built_str.clear();
                         let (boolean, forwardness) = self.read_until("{");
@@ -380,6 +402,8 @@ impl Lexer {
                         || char == ';'
                         || char == ')'
                         || char == '='
+                        || char == '>'
+                        || char == '<'
                         || char == ','
                         || char == '+'
                         || char == '-'
@@ -387,6 +411,7 @@ impl Lexer {
                         || char == '/'
                         || char == '%'
                         || (char == '&' && self.peek(2) == '&')
+                        || (char == '!' && self.peek(2) == '=')
                         || (char == '|' && self.peek(2) == '|'))
                 {
                     self.tokens

@@ -29,10 +29,14 @@ pub enum Tokens {
     Comma,
 
     Equivalence,
+    GreaterThan,
+    LesserThan,
+    GreaterThanEqual,
+    LesserThanEqual,
+    NotEqual,
     New(String, Vec<Tokens>),
 
     EOL,
     EOF,
     None,
 }
-

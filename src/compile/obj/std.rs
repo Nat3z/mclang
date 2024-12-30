@@ -9,6 +9,8 @@ use crate::{
     },
 };
 
+use super::scoreboard::ScoreboardPlayerPairObject;
+
 #[derive(Clone, Debug)]
 pub struct VariableObject {
     pub value: Box<Objects>,
@@ -17,9 +19,11 @@ pub struct VariableObject {
 
 #[derive(Clone, Debug)]
 pub struct MutationVariableObject {
-    pub variable: Box<Objects>,
+    pub variable_obj: Box<Objects>,
+    pub variable: ScoreboardPlayerPairObject,
     pub operator: Operator,
-    pub new_value: Box<Objects>,
+    pub mutation: ScoreboardPlayerPairObject,
+    pub mutation_value: Box<Objects>,
 }
 
 #[derive(Clone, Debug)]
@@ -105,9 +109,11 @@ impl Object for WhileObject {
 impl Object for MutationVariableObject {
     fn get_type(&self) -> Objects {
         Objects::MutationVariable(
-            self.variable.clone(),
+            Rc::new(self.variable.clone()),
+            self.variable_obj.clone(),
             self.operator.clone(),
-            self.new_value.clone(),
+            Rc::new(self.mutation.clone()),
+            self.mutation_value.clone(),
         )
     }
     fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
@@ -129,23 +135,20 @@ impl Object for MutationVariableObject {
 
 pub fn compile_into_variable(var: Objects, scoreboard: Objects) -> (String, Option<Scope>) {
     if let Objects::Number(num) = var {
-        if let Objects::Scoreboard(name, objective) = scoreboard {
+        if let Objects::Scoreboard(name, objective, _) = scoreboard {
             let mut built_str = String::new();
             built_str.push_str(&format!(
                 "scoreboard objective add {} {}\n",
                 name, objective
             ));
-            built_str.push_str(&format!(
-                "scoreboard players set value {} {}\n",
-                objective, num
-            ));
+            built_str.push_str(&format!("scoreboard players set value {} {}\n", name, num));
             return (built_str, None);
         } else {
             eprintln!("Invalid scoreboard");
             exit(1);
         }
     } else if let Objects::Boolean(bool) = var {
-        if let Objects::Scoreboard(name, objective) = scoreboard {
+        if let Objects::Scoreboard(name, objective, _) = scoreboard {
             let mut built_str = String::new();
             built_str.push_str(&format!(
                 "scoreboard objective add {} {}\n",
@@ -161,6 +164,11 @@ pub fn compile_into_variable(var: Objects, scoreboard: Objects) -> (String, Opti
             eprintln!("Invalid scoreboard");
             exit(1);
         }
+    } else if let Objects::Scoreboard(name, objective, _) = var {
+        return (
+            format!("scoreboard objective add {} {}\n", name, objective),
+            None,
+        );
     } else {
         // not a variable that should be compiled to text.
     }
@@ -169,71 +177,186 @@ pub fn compile_into_variable(var: Objects, scoreboard: Objects) -> (String, Opti
 }
 
 pub fn compile_into_mutation_variable(
-    variable: Objects,
+    variable: &ScoreboardPlayerPairObject,
+    variable_object: Objects,
     operation: Operator,
-    mutation: Objects,
+    mutation: Option<&ScoreboardPlayerPairObject>,
+    mutation_object: Objects,
 ) -> (String, Option<Scope>) {
-    if let Objects::Variable(variable, scoreboard) = variable {
-        if let Objects::Scoreboard(name, _) = *scoreboard {
-            match mutation {
-                Objects::Number(num) => {
-                    let mut built_str = String::new();
-                    if let Operator::Assignment = operation {
-                        built_str
-                            .push_str(&format!("scoreboard players set value {} {}\n", name, num));
-                    } else if let Operator::Add = operation {
-                        built_str
-                            .push_str(&format!("scoreboard players add value {} {}\n", name, num));
-                    } else if let Operator::Subtract = operation {
-                        built_str.push_str(&format!(
-                            "scoreboard players remove value {} {}\n",
-                            name, num
-                        ));
-                    }
-                    return (built_str, None);
-                }
-                Objects::Variable(_, scoreboard_second) => {
-                    if let Objects::Scoreboard(scoreboard_second, _) = *scoreboard_second {
-                        let mut built_str = String::new();
-                        if let Operator::Assignment = operation {
-                            built_str.push_str(&format!(
-                                "scoreboard players operation value {} = value {}",
-                                name, scoreboard_second
-                            ));
-                        } else if let Operator::Add = operation {
-                            built_str.push_str(&format!(
-                                "scoreboard players operation value {} += value {}",
-                                name, scoreboard_second
-                            ));
-                        } else if let Operator::Subtract = operation {
-                            built_str.push_str(&format!(
-                                "scoreboard players operation value {} -= value {}",
-                                name, scoreboard_second
-                            ));
-                        }
-                        return (built_str, None);
-                    }
-                }
-                Objects::Boolean(bool) => {
-                    let mut built_str = String::new();
-                    built_str.push_str(&format!(
-                        "scoreboard players set value {} {}\n",
-                        name,
-                        if bool { 1 } else { 0 }
-                    ));
-                    return (built_str, None);
-                }
-                _ => {
-                    eprintln!("Invalid mutation");
+    println!("{:?}", variable);
+    match mutation_object {
+        Objects::Number(num) => {
+            let mut built_str = String::new();
+            if let Operator::Assignment = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players set {} {} {}\n",
+                    variable.player_name, variable.objective_name, num
+                ));
+            } else if let Operator::Add = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players add {} {} {}\n",
+                    variable.player_name, variable.objective_name, num
+                ));
+            } else if let Operator::Subtract = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players remove {} {} {}\n",
+                    variable.player_name, variable.objective_name, num
+                ));
+            } else if let Operator::Multiply = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} *= {}\n",
+                    variable.player_name, variable.objective_name, num
+                ));
+            } else if let Operator::Divide = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} /= {}\n",
+                    variable.player_name, variable.objective_name, num
+                ));
+            } else if let Operator::Modulus = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} %= {}\n",
+                    variable.player_name, variable.objective_name, num
+                ));
+            }
+            return (built_str, None);
+        }
+        Objects::Variable(_, scoreboard_second) => {
+            if let Objects::Scoreboard(_, _, _) = *scoreboard_second {
+                if mutation.is_none() {
+                    eprintln!("No mutation found");
                     exit(1);
                 }
+
+                let mutation = mutation.unwrap();
+                let mut built_str = String::new();
+                if let Operator::Assignment = operation {
+                    built_str.push_str(&format!(
+                        "scoreboard players operation {} {} = {} {}",
+                        variable.player_name,
+                        variable.objective_name,
+                        mutation.player_name,
+                        mutation.objective_name
+                    ));
+                } else if let Operator::Add = operation {
+                    built_str.push_str(&format!(
+                        "scoreboard players operation {} {} += {} {}",
+                        variable.player_name,
+                        variable.objective_name,
+                        mutation.player_name,
+                        mutation.objective_name
+                    ));
+                } else if let Operator::Subtract = operation {
+                    built_str.push_str(&format!(
+                        "scoreboard players operation {} {} -= {} {}",
+                        variable.player_name,
+                        variable.objective_name,
+                        mutation.player_name,
+                        mutation.objective_name
+                    ));
+                } else if let Operator::Multiply = operation {
+                    built_str.push_str(&format!(
+                        "scoreboard players operation {} {} *= {} {}",
+                        variable.player_name,
+                        variable.objective_name,
+                        mutation.player_name,
+                        mutation.objective_name
+                    ));
+                } else if let Operator::Divide = operation {
+                    built_str.push_str(&format!(
+                        "scoreboard players operation {} {} /= {} {}",
+                        variable.player_name,
+                        variable.objective_name,
+                        mutation.player_name,
+                        mutation.objective_name
+                    ));
+                } else if let Operator::Modulus = operation {
+                    built_str.push_str(&format!(
+                        "scoreboard players operation {} {} %= {} {}",
+                        variable.player_name,
+                        variable.objective_name,
+                        mutation.player_name,
+                        mutation.objective_name
+                    ));
+                }
+                return (built_str, None);
             }
-        } else {
-            eprintln!("Invalid scoreboard");
+        }
+        Objects::Boolean(bool) => {
+            let mut built_str = String::new();
+            built_str.push_str(&format!(
+                "scoreboard players set {} {} {}\n",
+                variable.player_name,
+                variable.objective_name,
+                if bool { 1 } else { 0 }
+            ));
+            return (built_str, None);
+        }
+
+        Objects::ScoreboardPlayerPair(new_player_name, new_objective, _) => {
+            if mutation.is_none() {
+                eprintln!("No mutation found");
+                exit(1);
+            }
+            let mutation = mutation.unwrap();
+            let mut built_str = String::new();
+
+            if let Operator::Assignment = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} = {} {}",
+                    variable.player_name,
+                    variable.objective_name,
+                    mutation.player_name,
+                    mutation.objective_name
+                ));
+            } else if let Operator::Add = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} += {} {}",
+                    variable.player_name,
+                    variable.objective_name,
+                    mutation.player_name,
+                    mutation.objective_name
+                ));
+            } else if let Operator::Subtract = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} -= {} {}",
+                    variable.player_name,
+                    variable.objective_name,
+                    mutation.player_name,
+                    mutation.objective_name
+                ));
+            } else if let Operator::Multiply = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} *= {} {}",
+                    variable.player_name,
+                    variable.objective_name,
+                    mutation.player_name,
+                    mutation.objective_name
+                ));
+            } else if let Operator::Divide = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} /= {} {}",
+                    variable.player_name,
+                    variable.objective_name,
+                    mutation.player_name,
+                    mutation.objective_name
+                ));
+            } else if let Operator::Modulus = operation {
+                built_str.push_str(&format!(
+                    "scoreboard players operation {} {} %= {} {}",
+                    variable.player_name,
+                    variable.objective_name,
+                    mutation.player_name,
+                    mutation.objective_name
+                ));
+            }
+
+            return (built_str, None);
+        }
+        _ => {
+            eprintln!("Invalid mutation {:?}", mutation_object);
             exit(1);
         }
     }
-
     return (String::new(), None);
 }
 pub fn compile_into_while_loop(
@@ -272,6 +395,7 @@ pub fn compile_into_while_loop(
                     Box::new(Objects::Scoreboard(
                         format!("v_{}_{}", inline_scope.name, inline_scope.variables.len()),
                         "dummy".to_string(),
+                        Box::new(item.get_type()),
                     )),
                 );
                 let variable = match_objects(variable);

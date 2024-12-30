@@ -8,6 +8,7 @@ use super::{
         basic::{BooleanObject, NullObject, NumberObject, SetObject, StringObject},
         blockpos::BlockPosObject,
         entity::EntityObject,
+        scoreboard::{ScoreboardObject, ScoreboardPlayerPairObject},
         std::{IfStatementObject, MutationVariableObject, VariableObject, WhileObject},
     },
 };
@@ -21,9 +22,16 @@ pub enum Objects {
     Number(i64),
     Boolean(bool),
     MCStatement(Statements),
-    Scoreboard(String, String),
+    Scoreboard(String, String, Box<Objects>),
+    ScoreboardPlayerPair(String, String, Box<Objects>),
     Variable(Box<Objects>, Box<Objects>),
-    MutationVariable(Box<Objects>, Operator, Box<Objects>),
+    MutationVariable(
+        Rc<dyn Object>,
+        Box<Objects>,
+        Operator,
+        Rc<dyn Object>,
+        Box<Objects>,
+    ),
     IfStatement(Vec<Rc<dyn Object>>, Box<ASTOperation>),
     Array(Vec<Rc<dyn Object>>),
     While(String, Vec<Rc<dyn Object>>, Box<ASTOperation>),
@@ -51,7 +59,11 @@ pub fn name_into_object(str: &str) -> Rc<dyn Object> {
         // "number" => Objects::Number(0),
         // "boolean" => Objects::Boolean(false),
         // "mcstatement" => Objects::MCStatement(Statements::Raw("".to_string())),
-        "Scoreboard" => match_objects(Objects::Scoreboard("".to_string(), "".to_string())),
+        "Scoreboard" => match_objects(Objects::Scoreboard(
+            "".to_string(),
+            "".to_string(),
+            Box::new(Objects::Unknown),
+        )),
         // "variable" => Objects::Variable(Box::new(Objects::Unknown), Box::new(Objects::Unknown)),
         // "mutation_variable" => Objects::MutationVariable(Box::new(Objects::Unknown), Operator::Add, Box::new(Objects::Unknown)),
         // "if_statement" => Objects::IfStatement(vec![], Box::new(ASTOperation::Access("".to_string()))),
@@ -69,11 +81,23 @@ pub fn match_objects(obj: Objects) -> Rc<dyn Object> {
             value: var,
             scoreboard,
         }),
-        Objects::MutationVariable(variable, operator, new) => Rc::new(MutationVariableObject {
-            variable,
-            new_value: new,
-            operator,
-        }),
+        Objects::MutationVariable(variable, variable_obj, operator, new, new_obj) => {
+            Rc::new(MutationVariableObject {
+                variable: variable
+                    .as_any()
+                    .downcast_ref::<ScoreboardPlayerPairObject>()
+                    .expect(format!("{:?}", variable).as_str())
+                    .clone(),
+                variable_obj,
+                operator,
+                mutation: new
+                    .as_any()
+                    .downcast_ref::<ScoreboardPlayerPairObject>()
+                    .expect(format!("{:?}", new).as_str())
+                    .clone(),
+                mutation_value: new_obj,
+            })
+        }
         Objects::IfStatement(boolean_statements, code_block) => Rc::new(IfStatementObject {
             code_block,
             operations: boolean_statements,
@@ -85,6 +109,18 @@ pub fn match_objects(obj: Objects) -> Rc<dyn Object> {
             name,
             iterator,
             code_block,
+        }),
+        Objects::ScoreboardPlayerPair(objective_name, player_name, objective_type) => {
+            Rc::new(ScoreboardPlayerPairObject {
+                objective_name,
+                player_name,
+                objective_type: *objective_type,
+            })
+        }
+        Objects::Scoreboard(name, objective, objective_type) => Rc::new(ScoreboardObject {
+            name,
+            objective,
+            objective_type: *objective_type,
         }),
         _ => Rc::new(NullObject {}),
     }
