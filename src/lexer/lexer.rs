@@ -147,11 +147,25 @@ impl Lexer {
                 }
                 built_str.push(char);
                 match built_str.trim_start() {
-                    "let " => {
+                    "let " | "const " => {
+                        let constant = if built_str.trim_start() == "const " {
+                            true
+                        } else {
+                            false
+                        };
+
                         built_str.clear();
                         let (var_name, forwardness) = self.read_until("=");
+
                         self.column += forwardness;
-                        self.tokens.push(Tokens::Let(var_name.trim().to_string()));
+
+                        let var_name = if constant {
+                            "*".to_string() + &var_name.trim().to_string()
+                        } else {
+                            var_name.trim().to_string()
+                        };
+
+                        self.tokens.push(Tokens::Let(var_name));
                     }
                     "=" => {
                         // this means that this is an equivalence operator

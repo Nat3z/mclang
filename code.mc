@@ -1,9 +1,9 @@
-let x = 5;
-let a = new Scoreboard("a", "dummy");
+const x = 5;
+let a = new Scoreboard("fortnite", "dummy");
 let relative = a.get_player("@p");
 
-if x == relative {
-    let entity = new Entity("@a");
-    entity.kill();
-}
+relative.add(x);
 
+if relative == 5 {
+    relative.add(5);
+}

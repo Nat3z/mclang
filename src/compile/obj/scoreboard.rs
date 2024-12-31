@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, rc::Rc};
 
 use crate::{
     ast::operations::Operator,
-    compile::objects::{match_objects, mk_function_map, Object, Objects},
+    compile::objects::{match_objects, mk_function_map, mk_variable, Object, Objects},
 };
 
 use super::std::VariableObject;
@@ -30,6 +30,19 @@ impl Object for ScoreboardPlayerPairObject {
         )
     }
     fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
+        let mut map = HashMap::new();
+        map.insert(
+            "selector",
+            mk_variable(Objects::String(self.player_name.clone()), Objects::Unknown),
+        );
+        map.insert(
+            "objective",
+            mk_variable(
+                Objects::String(self.objective_name.clone()),
+                Objects::Unknown,
+            ),
+        );
+
         HashMap::new()
     }
     fn as_any(&self) -> &dyn Any {
@@ -41,18 +54,18 @@ impl Object for ScoreboardPlayerPairObject {
         String,
         Box<dyn Fn(Vec<Rc<dyn Object>>, Option<Rc<VariableObject>>) -> Rc<dyn Object>>,
     > {
-        let mut map = mk_function_map();
-
-        map.insert(
-            "add".to_string(),
-            Box::new(|args, var| {
+        fn create_operator_func(
+            operator: Operator,
+        ) -> Box<dyn Fn(Vec<Rc<dyn Object>>, Option<Rc<VariableObject>>) -> Rc<dyn Object>>
+        {
+            return Box::new(move |args, var| {
                 let value = args[0].get_type();
                 if var.is_none() {
                     panic!("No variable found");
                 }
 
                 let var = var.unwrap();
-                if let Objects::ScoreboardPlayerPair(player_name, objective_name, objective_type) =
+                if let Objects::ScoreboardPlayerPair(objective_name, player_name, objective_type) =
                     *var.value.clone()
                 {
                     match value {
@@ -67,15 +80,15 @@ impl Object for ScoreboardPlayerPairObject {
                                 player_name,
                                 objective_type.clone(),
                             )),
-                            Operator::Add,
+                            operator.clone(),
                             match_objects(Objects::ScoreboardPlayerPair(
-                                "value".to_string(),
                                 "".to_string(),
+                                "value".to_string(),
                                 Box::new(Objects::Number(0)),
                             )),
                             Box::new(Objects::Number(value)),
                         )),
-                        Objects::ScoreboardPlayerPair(new_player, new_objective, obj_type) => {
+                        Objects::ScoreboardPlayerPair(new_objective, new_player, obj_type) => {
                             let second_scoreboard_pair = ScoreboardPlayerPairObject {
                                 objective_type: *obj_type.clone(),
                                 objective_name: new_objective,
@@ -88,11 +101,10 @@ impl Object for ScoreboardPlayerPairObject {
                                 player_name,
                             };
 
-                            println!("fired");
                             match_objects(Objects::MutationVariable(
                                 Rc::new(first_scoreboard_pair.clone()),
                                 Box::new(first_scoreboard_pair.get_type()),
-                                Operator::Add,
+                                operator.clone(),
                                 Rc::new(second_scoreboard_pair.clone()),
                                 Box::new(second_scoreboard_pair.get_type()),
                             ))
@@ -103,7 +115,24 @@ impl Object for ScoreboardPlayerPairObject {
                 } else {
                     panic!("Invalid arguments")
                 }
-            }),
+            });
+        }
+        let mut map = mk_function_map();
+
+        map.insert("add".to_string(), create_operator_func(Operator::Add));
+        map.insert(
+            "multiply".to_string(),
+            create_operator_func(Operator::Multiply),
+        );
+        map.insert("divide".to_string(), create_operator_func(Operator::Divide));
+        map.insert("sub".to_string(), create_operator_func(Operator::Subtract));
+        map.insert(
+            "modulus".to_string(),
+            create_operator_func(Operator::Modulus),
+        );
+        map.insert(
+            "set".to_string(),
+            create_operator_func(Operator::Assignment),
         );
 
         map
@@ -142,8 +171,8 @@ impl Object for ScoreboardObject {
                     let name = args[0].get_type();
                     match name {
                         Objects::String(name) => match_objects(Objects::ScoreboardPlayerPair(
-                            name,
                             sb_name.clone(),
+                            name,
                             sb_type,
                         )),
                         _ => panic!("Invalid arguments"),

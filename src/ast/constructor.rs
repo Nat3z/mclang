@@ -134,6 +134,11 @@ impl AST {
                                 Tokens::SemiColon,
                                 Tokens::And,
                                 Tokens::Or,
+                                Tokens::LesserThan,
+                                Tokens::LesserThanEqual,
+                                Tokens::GreaterThan,
+                                Tokens::GreaterThanEqual,
+                                Tokens::NotEqual,
                                 Tokens::Equivalence,
                             ]
                             .to_vec(),
