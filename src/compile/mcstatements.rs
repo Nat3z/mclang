@@ -11,6 +11,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub enum Statements {
     Execute(Vec<ExecuteSteps>),
+    Function(String, Scope),
     Raw(String),
 }
 #[derive(Clone, Debug)]
@@ -271,6 +272,9 @@ pub fn compile_into_mcstatement(statement: Statements) -> (String, Option<Scope>
         }
         Statements::Raw(raw) => {
             return (raw, None);
+        }
+        Statements::Function(name, function) => {
+            return (format!("function {}", &name), Some(function));
         }
     }
 }

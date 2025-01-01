@@ -167,6 +167,17 @@ impl Lexer {
 
                         self.tokens.push(Tokens::Let(var_name));
                     }
+                    "import " => {
+                        built_str.clear();
+                        let (import_name, forwardness) = self.read_until(";");
+                        self.column += forwardness;
+                        self.tokens
+                            .push(Tokens::Import(import_name.trim().to_string()));
+                    }
+                    "export " => {
+                        built_str.clear();
+                        self.tokens.push(Tokens::Export);
+                    }
                     "=" => {
                         // this means that this is an equivalence operator
                         built_str.clear();
@@ -212,6 +223,21 @@ impl Lexer {
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         self.tokens.push(Tokens::If(tokens));
+                    }
+                    "fn " => {
+                        built_str.clear();
+                        let (function_name, forwardness) = self.read_until("(");
+                        self.column += forwardness + 1;
+                        let (function_args, forwardness) = self.read_until_last('(', ')');
+                        self.column += forwardness;
+                        let mut lexer = Lexer::new(function_args.trim().to_string());
+                        lexer.tokenizer();
+                        let mut tokens = lexer.flush().to_vec();
+                        // remove the last 2 tokens as those are just EOL EOF
+                        tokens.remove(tokens.len() - 1);
+                        tokens.remove(tokens.len() - 1);
+                        self.tokens
+                            .push(Tokens::Function(function_name.trim().to_string(), tokens));
                     }
                     "while " => {
                         built_str.clear();
@@ -424,6 +450,7 @@ impl Lexer {
                         || char == '*'
                         || char == '/'
                         || char == '%'
+                        || char == ','
                         || (char == '&' && self.peek(2) == '&')
                         || (char == '!' && self.peek(2) == '=')
                         || (char == '|' && self.peek(2) == '|'))

@@ -18,6 +18,9 @@ pub struct VariableObject {
 }
 
 #[derive(Clone, Debug)]
+pub struct CreatedFunctionObject {}
+
+#[derive(Clone, Debug)]
 pub struct MutationVariableObject {
     pub variable_obj: Box<Objects>,
     pub variable: ScoreboardPlayerPairObject,
@@ -63,6 +66,27 @@ impl Object for VariableObject {
 impl Object for IfStatementObject {
     fn get_type(&self) -> Objects {
         Objects::IfStatement(self.operations.clone(), self.code_block.clone())
+    }
+    fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
+        HashMap::new()
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn get_functions(
+        &self,
+    ) -> HashMap<
+        String,
+        Box<dyn Fn(Vec<Rc<dyn Object>>, Option<Rc<VariableObject>>) -> Rc<dyn Object>>,
+    > {
+        HashMap::new()
+    }
+}
+
+impl Object for CreatedFunctionObject {
+    fn get_type(&self) -> Objects {
+        Objects::CreatedFunction
     }
     fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
         HashMap::new()
@@ -386,6 +410,7 @@ pub fn compile_into_while_loop(
                     format!("{}.{}", scope.name, scope.scopes.len()),
                     compiler.namespace.clone(),
                     codes.clone(),
+                    scope.functions.clone(),
                 );
                 // add scoped variables
                 inline_scope.variables = scope.variables.clone();
@@ -465,6 +490,7 @@ pub fn compile_into_if_statement(
                 format!("{}.{}", scope.name, scope.scopes.len()),
                 compiler.namespace.clone(),
                 codes,
+                scope.functions.clone(),
             );
             // add scoped variables
             inline_scope.variables = scope.variables.clone();

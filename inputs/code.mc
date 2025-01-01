@@ -1,0 +1,3 @@
+import main;
+
+check(x);

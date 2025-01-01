@@ -9,7 +9,10 @@ use super::{
         blockpos::BlockPosObject,
         entity::EntityObject,
         scoreboard::{ScoreboardObject, ScoreboardPlayerPairObject},
-        std::{IfStatementObject, MutationVariableObject, VariableObject, WhileObject},
+        std::{
+            CreatedFunctionObject, IfStatementObject, MutationVariableObject, VariableObject,
+            WhileObject,
+        },
     },
 };
 
@@ -25,6 +28,7 @@ pub enum Objects {
     Scoreboard(String, String, Box<Objects>),
     ScoreboardPlayerPair(String, String, Box<Objects>),
     Variable(Box<Objects>, Box<Objects>),
+    CreatedFunction,
     MutationVariable(
         Rc<dyn Object>,
         Box<Objects>,
@@ -117,6 +121,7 @@ pub fn match_objects(obj: Objects) -> Rc<dyn Object> {
                 objective_type: *objective_type,
             })
         }
+        Objects::CreatedFunction => Rc::new(CreatedFunctionObject {}),
         Objects::Scoreboard(name, objective, objective_type) => Rc::new(ScoreboardObject {
             name,
             objective,

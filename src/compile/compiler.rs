@@ -1,13 +1,18 @@
 use std::{
     collections::HashMap,
+    fmt::format,
     mem::{discriminant, Discriminant},
     process::exit,
     rc::Rc,
 };
 
 use crate::{
-    ast::operations::{ASTOperation, Operator},
+    ast::{
+        constructor::AST,
+        operations::{ASTOperation, Operator},
+    },
     compile::obj::std::VariableObject,
+    lexer::lexer::Lexer,
 };
 
 use super::{
@@ -29,13 +34,23 @@ pub struct Compiler {
     pub scopes: Vec<Scope>,
     pub namespace: String,
     pub outputs: HashMap<String, String>,
+    pub prepared_files: HashMap<String, String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+pub struct Function {
+    pub name: String,
+    pub arguments: Vec<String>,
+    pub code: Vec<ASTOperation>,
+}
+#[derive(Clone, Debug)]
 pub struct Scope {
     pub variables: HashMap<String, Variable>,
     pub statements: Vec<ASTOperation>,
     pub namespace: String,
+    pub functions: HashMap<String, Function>,
+    pub exported_functions: HashMap<String, Function>,
+    pub exported_variables: HashMap<String, Variable>,
     pub scopes: Vec<Scope>,
     pub name: String,
 }
@@ -46,15 +61,12 @@ pub struct Variable {
     pub static_variable: bool,
 }
 impl Compiler {
-    pub fn new(statements: Vec<ASTOperation>, namespace: &'static str) -> Compiler {
+    pub fn new(namespace: &'static str) -> Compiler {
         Compiler {
-            scopes: vec![Scope::new(
-                "global".to_string(),
-                namespace.to_string(),
-                statements,
-            )],
+            scopes: vec![],
             namespace: namespace.to_string(),
             outputs: HashMap::new(),
+            prepared_files: HashMap::new(),
         }
     }
 
@@ -90,6 +102,14 @@ impl Compiler {
 
                 return (compiled_value, None);
             }
+            Objects::Array(opts) => {
+                let mut output_str = String::new();
+                for opt in opts {
+                    let (compiled_value, _) = self.compile_into(scope, opt.clone());
+                    output_str.push_str(&format!("\n{}", compiled_value));
+                }
+                return (output_str, None);
+            }
             _ => {
                 println!("Invalid: {:?}", value.get_type());
             }
@@ -105,7 +125,7 @@ impl Compiler {
         let mut output_str = String::new();
         while current_scope.statements.len() > index {
             let current_statement = current_scope.statements[index].clone();
-            let value = current_scope.execute(&current_statement, None);
+            let value = current_scope.execute(&current_statement, None, self);
             let (compiled_value, mut new_scope) = self.compile_into(current_scope, value);
             output_str.push_str(&format!("\n{}", &compiled_value));
 
@@ -125,12 +145,20 @@ impl Compiler {
 }
 
 impl Scope {
-    pub fn new(name: String, namespace: String, statements: Vec<ASTOperation>) -> Scope {
+    pub fn new(
+        name: String,
+        namespace: String,
+        statements: Vec<ASTOperation>,
+        functions: HashMap<String, Function>,
+    ) -> Scope {
         Scope {
             variables: HashMap::new(),
             statements,
             namespace,
+            functions,
             scopes: vec![],
+            exported_functions: HashMap::new(),
+            exported_variables: HashMap::new(),
             name,
         }
     }
@@ -139,6 +167,7 @@ impl Scope {
         &mut self,
         instruction: &ASTOperation,
         current_variable: Option<Variable>,
+        compiler: &mut Compiler,
     ) -> Rc<dyn Object> {
         match instruction {
             ASTOperation::LiteralString(str) => {
@@ -150,12 +179,73 @@ impl Scope {
             ASTOperation::LiteralBool(bool) => {
                 return match_objects(Objects::Boolean(*bool));
             }
+            ASTOperation::Export(statement) => {
+                let value = self.execute(&statement, current_variable, compiler);
+                println!("Exporting: {:?}", value.get_type());
+                if let Objects::Variable(_, _) = value.get_type() {
+                    // get the last variable added
+                    let last_variable = self.variables.values().last().unwrap();
+                    self.exported_variables
+                        .insert(last_variable.name.clone(), last_variable.clone());
+                } else if let Objects::CreatedFunction = value.get_type() {
+                    let last_function = self.functions.values().last().unwrap();
+                    self.exported_functions
+                        .insert(last_function.name.clone(), last_function.clone());
+                }
+                return match_objects(value.get_type());
+            }
+            ASTOperation::Import(name) => {
+                let existing_scope = compiler.scopes.iter().find(|scope| scope.name == *name);
+                let mut just_initialized = false;
+                let existing_scope = if existing_scope.is_none() {
+                    let reference = compiler.prepared_files.get(name);
+                    if reference.is_none() {
+                        eprintln!("File {} does not exist.", name);
+                        exit(1);
+                    }
+
+                    let reference = reference.unwrap().to_string();
+                    let mut lexer = Lexer::new(reference);
+                    lexer.tokenizer();
+                    let mut ast = AST::new(lexer.flush().to_vec());
+                    ast.generate();
+
+                    let mut scope = Scope::new(
+                        format!("{}", name),
+                        self.namespace.clone(),
+                        ast.flush().to_vec(),
+                        HashMap::new(),
+                    );
+                    compiler.scopes.push(scope.clone());
+                    compiler.compile(&mut scope);
+                    just_initialized = true;
+                    Some(scope)
+                } else {
+                    Some(existing_scope.unwrap().clone())
+                };
+                let existing_scope = existing_scope.unwrap();
+
+                for (name, value) in existing_scope.exported_variables {
+                    self.variables.insert(name, value);
+                }
+                for (name, value) in existing_scope.exported_functions {
+                    self.functions.insert(name, value);
+                }
+                if just_initialized {
+                    return match_objects(Objects::MCStatement(Statements::Raw(format!(
+                        "function {}:{}",
+                        existing_scope.namespace, existing_scope.name,
+                    ))));
+                } else {
+                    return match_objects(Objects::Unknown);
+                }
+            }
             ASTOperation::AssignVariable(name, operation) => {
                 if operation.len() != 1 {
                     eprintln!("More than 1 operation in assign variable");
                     exit(1);
                 }
-                let value = self.execute(&operation[0], current_variable);
+                let value = self.execute(&operation[0], current_variable, compiler);
                 if discriminant(&value.get_type())
                     == discriminant(&Objects::Variable(
                         Box::new(Objects::Unknown),
@@ -207,7 +297,7 @@ impl Scope {
                     eprintln!("More than 1 operation in assign variable");
                     exit(1);
                 }
-                let value = self.execute(&operation[0], current_variable);
+                let value = self.execute(&operation[0], current_variable, compiler);
 
                 let variable = Objects::Variable(
                     Box::new(value.clone().get_type()),
@@ -233,7 +323,7 @@ impl Scope {
                     eprintln!("More than 1 operation in assign variable");
                     exit(1);
                 }
-                let evaluated_operation = self.execute(&operation[0], current_variable);
+                let evaluated_operation = self.execute(&operation[0], current_variable, compiler);
                 if !self.variables.contains_key(name) {
                     eprintln!("Variable {} does not exist", name);
                     exit(1);
@@ -414,7 +504,7 @@ impl Scope {
             ASTOperation::UseVariable(name, operation) => {
                 if current_variable.is_none() {
                     let variable = self.variables.get(name).expect("Variable not found");
-                    let value = self.execute(&operation, Some(variable.clone()));
+                    let value = self.execute(&operation, Some(variable.clone()), compiler);
                     return value;
                 }
 
@@ -436,17 +526,19 @@ impl Scope {
                     value: variable.clone(),
                     static_variable: true,
                 };
-                let value = self.execute(&operation, Some(variable));
+                let value = self.execute(&operation, Some(variable), compiler);
                 return value;
             }
             // runs this inside of the variable
             ASTOperation::AccessPart(operation) => {
-                let value = self.execute(&operation, current_variable);
+                let value = self.execute(&operation, current_variable, compiler);
                 return value;
             }
             ASTOperation::Operation(first_statement, operator, second_statement) => {
-                let first_value = self.execute(&first_statement, current_variable.clone());
-                let second_value = self.execute(&second_statement, current_variable.clone());
+                let first_value =
+                    self.execute(&first_statement, current_variable.clone(), compiler);
+                let second_value =
+                    self.execute(&second_statement, current_variable.clone(), compiler);
                 if *operator == Operator::Add
                     || *operator == Operator::Subtract
                     || *operator == Operator::Assignment
@@ -597,15 +689,102 @@ impl Scope {
                 let mut values: Vec<Rc<dyn Object>> = vec![];
                 for operation in operations {
                     println!("Executing: {:?}", operation);
-                    values.push(self.execute(&operation, current_variable.clone()));
+                    values.push(self.execute(&operation, current_variable.clone(), compiler));
                 }
 
                 return match_objects(Objects::IfStatement(values, codeblock.clone()));
             }
-
+            ASTOperation::CreateFunction(name, arguments, code) => {
+                let function = Function {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                    code: code.clone(),
+                };
+                self.functions.insert(name.clone(), function);
+                return match_objects(Objects::CreatedFunction);
+            }
             ASTOperation::Function(name, set) => {
-                let function = current_variable.as_ref().unwrap();
+                let mut items: Vec<Rc<dyn Object>> = vec![];
+                if let ASTOperation::Set(operations) = &set[0] {
+                    for operation in operations {
+                        let execution = self.execute(&operation, None, compiler);
 
+                        items.push(execution);
+                    }
+                } else {
+                    eprintln!("Missing set.");
+                    exit(1);
+                }
+
+                let function = current_variable.as_ref();
+                if function.is_none() {
+                    // check the scope's own functions
+                    let own_function = self.functions.clone();
+                    let own_function = own_function.get(name);
+
+                    if own_function.is_none() {
+                        eprintln!("Function {} does not exist.", name);
+                        exit(1);
+                    }
+
+                    let own_function = own_function.unwrap();
+                    // pass the arguments to the function
+                    let mut function_scope = Scope::new(
+                        format!("{}.{}", self.name, self.scopes.len()),
+                        self.namespace.clone(),
+                        own_function.code.clone(),
+                        self.functions.clone(),
+                    );
+
+                    function_scope.variables = self.variables.clone();
+                    for (index, item) in items.iter().enumerate() {
+                        if let Objects::Variable(value, _) = item.get_type() {
+                            let variable_object =
+                                item.as_any().downcast_ref::<VariableObject>().unwrap();
+                            function_scope.variables.insert(
+                                own_function.arguments[index].clone(),
+                                Variable {
+                                    name: own_function.arguments[index].clone(),
+                                    value: Rc::new(VariableObject {
+                                        value: Box::new(*value.clone()),
+                                        scoreboard: variable_object.scoreboard.clone(),
+                                    }),
+                                    static_variable: false,
+                                },
+                            );
+                        } else {
+                            function_scope.variables.insert(
+                                own_function.arguments[index].clone(),
+                                Variable {
+                                    name: own_function.arguments[index].clone(),
+                                    value: Rc::new(VariableObject {
+                                        value: Box::new(item.get_type()),
+                                        scoreboard: Box::new(Objects::Scoreboard(
+                                            "".to_string(),
+                                            "dummy".to_string(),
+                                            Box::new(item.get_type()),
+                                        )),
+                                    }),
+                                    static_variable: true,
+                                },
+                            );
+                        }
+                    }
+
+                    for statement in own_function.code.iter() {
+                        function_scope.execute(statement, None, compiler);
+                    }
+                    self.scopes.push(function_scope.clone());
+
+                    let function_call =
+                        &format!("{}:{}", function_scope.namespace, function_scope.name);
+                    return match_objects(Objects::MCStatement(Statements::Function(
+                        function_call.to_string(),
+                        function_scope,
+                    )));
+                }
+
+                let function = function.unwrap();
                 let current_variable_as_object = current_variable
                     .as_ref()
                     .unwrap()
@@ -619,58 +798,52 @@ impl Scope {
                     exit(1);
                 }
                 let function = match_objects(*function.unwrap().value.clone()).get_functions();
+
                 let function = function.get(name);
                 if function.is_none() {
-                    println!("bad: {:?}", current_variable.unwrap());
-                    eprintln!("Unknown function: {}", name);
+                    eprintln!("Function {} does not exist.", name);
                     exit(1);
                 }
-
                 let function = function.unwrap();
-                if let ASTOperation::Set(operations) = &set[0] {
-                    let mut items: Vec<Rc<dyn Object>> = vec![];
 
-                    for operation in operations {
-                        let execution = self.execute(&operation, None);
-                        if let Objects::Variable(value, _) = execution.get_type() {
-                            match *value {
-                                Objects::Number(_) | Objects::Boolean(_) => {
-                                    let variable_object = execution
-                                        .as_any()
-                                        .downcast_ref::<VariableObject>()
-                                        .unwrap();
-                                    if let Objects::Scoreboard(name, _, _) =
-                                        *variable_object.scoreboard.clone()
-                                    {
-                                        items.push(match_objects(Objects::ScoreboardPlayerPair(
-                                            name,
-                                            "value".to_string(),
-                                            Box::new(*value.clone()),
-                                        )));
-                                    } else {
-                                        items.push(match_objects(*value));
-                                    }
-                                }
-                                _ => {
-                                    items.push(match_objects(*value));
+                let mut pass_items: Vec<Rc<dyn Object>> = vec![];
+                for execution in items {
+                    if let Objects::Variable(value, _) = execution.get_type() {
+                        match *value {
+                            Objects::Number(_) | Objects::Boolean(_) => {
+                                let variable_object =
+                                    execution.as_any().downcast_ref::<VariableObject>().unwrap();
+                                if let Objects::Scoreboard(name, _, _) =
+                                    *variable_object.scoreboard.clone()
+                                {
+                                    pass_items.push(match_objects(Objects::ScoreboardPlayerPair(
+                                        name,
+                                        "value".to_string(),
+                                        Box::new(*value.clone()),
+                                    )));
+                                } else {
+                                    pass_items.push(match_objects(*value));
                                 }
                             }
-                        } else {
-                            items.push(execution);
+                            _ => {
+                                pass_items.push(match_objects(*value));
+                            }
                         }
+                    } else {
+                        pass_items.push(execution);
                     }
-
-                    return function(items, Some(Rc::new(current_variable_as_object.clone())));
-                } else {
-                    eprintln!("Missing set.");
-                    exit(1);
                 }
+
+                return function(
+                    pass_items,
+                    Some(Rc::new(current_variable_as_object.clone())),
+                );
             }
 
             ASTOperation::While(name, set, code) => {
                 println!("While: {:?} {:?} {:?}", name, set, code);
                 // if the operation is instead an access, then we need to get the variable.
-                let mut iterator = self.execute(&set[0], current_variable.clone());
+                let mut iterator = self.execute(&set[0], current_variable.clone(), compiler);
 
                 let variable_iterator = iterator.as_any().downcast_ref::<VariableObject>();
                 if variable_iterator.is_some() {
@@ -698,7 +871,7 @@ impl Scope {
                     let mut items: Vec<Rc<dyn Object>> = vec![];
 
                     for operation in operations {
-                        let execution = self.execute(&operation, None);
+                        let execution = self.execute(&operation, None, compiler);
                         if let Objects::Variable(value, _) = execution.get_type() {
                             items.push(match_objects(*value));
                         } else {
@@ -708,7 +881,7 @@ impl Scope {
 
                     return function(items, None);
                 } else if params.len() > 0 {
-                    let mut execution = self.execute(&params[0], None);
+                    let mut execution = self.execute(&params[0], None, compiler);
                     if let Objects::Variable(value, _) = execution.get_type() {
                         execution = match_objects(*value);
                     }
@@ -721,7 +894,7 @@ impl Scope {
             ASTOperation::Set(multiple) => {
                 let mut set_values: Vec<Rc<dyn Object>> = vec![];
                 for operation in multiple {
-                    set_values.push(self.execute(&operation, current_variable.clone()));
+                    set_values.push(self.execute(&operation, current_variable.clone(), compiler));
                 }
                 return match_objects(Objects::Array(set_values));
             }

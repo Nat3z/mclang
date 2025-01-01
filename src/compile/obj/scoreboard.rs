@@ -30,20 +30,23 @@ impl Object for ScoreboardPlayerPairObject {
         )
     }
     fn get_variables(&self) -> HashMap<String, Rc<VariableObject>> {
-        let mut map = HashMap::new();
+        let mut map: HashMap<String, Rc<VariableObject>> = HashMap::new();
         map.insert(
-            "selector",
+            "selector".to_string(),
             mk_variable(Objects::String(self.player_name.clone()), Objects::Unknown),
         );
         map.insert(
-            "objective",
+            "objective".to_string(),
             mk_variable(
                 Objects::String(self.objective_name.clone()),
                 Objects::Unknown,
             ),
         );
-
-        HashMap::new()
+        map.insert(
+            "entity".to_string(),
+            mk_variable(Objects::Entity(self.player_name.clone()), Objects::Unknown),
+        );
+        map
     }
     fn as_any(&self) -> &dyn Any {
         self

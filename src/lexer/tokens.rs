@@ -21,8 +21,6 @@ pub enum Tokens {
     Modulus,
 
     If(Vec<Tokens>),
-    Else(Vec<Tokens>),
-    ElseIf(Vec<Tokens>),
     While(String, Vec<Tokens>),
     And,
     Or,
@@ -31,10 +29,13 @@ pub enum Tokens {
     Equivalence,
     GreaterThan,
     LesserThan,
+    Function(String, Vec<Tokens>),
     GreaterThanEqual,
     LesserThanEqual,
     NotEqual,
     New(String, Vec<Tokens>),
+    Export,
+    Import(String),
 
     EOL,
     EOF,

@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub enum ASTOperation {
     Function(String, Vec<ASTOperation>),
-    CreateFunction(String, Vec<ASTOperation>),
+    CreateFunction(String, Vec<String>, Vec<ASTOperation>),
     Create(String, Vec<ASTOperation>),
     MutateVariable(String, Vec<ASTOperation>),
     CodeBlock(Vec<ASTOperation>),
@@ -16,7 +16,9 @@ pub enum ASTOperation {
     UseVariable(String, Box<ASTOperation>),
     If(Vec<ASTOperation>, Box<ASTOperation>),
     While(String, Vec<ASTOperation>, Box<ASTOperation>),
-    Operation(Box<ASTOperation>, Operator, Box<ASTOperation>)
+    Operation(Box<ASTOperation>, Operator, Box<ASTOperation>),
+    Export(Box<ASTOperation>),
+    Import(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,14 +38,12 @@ pub enum Operator {
     Assignment,
     And,
     Or,
-    Not
+    Not,
 }
 
 #[derive(Debug, Clone)]
 pub struct NodeStatement {
-    operation: ASTOperation
+    operation: ASTOperation,
 }
 
-impl NodeStatement {
-    
-}
+impl NodeStatement {}

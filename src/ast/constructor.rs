@@ -80,6 +80,7 @@ impl AST {
         let mut position_in_line = 1;
         let mut operand: Option<Operator> = None;
         let mut combind_ifs: Option<Operator> = None;
+        let mut export_next = false;
         while self.tokens.len() > self.index {
             let current_token = self.peek(0);
             match current_token {
@@ -94,14 +95,18 @@ impl AST {
                     let statements = self.get_statements_from_tokens(&statements);
                     self.index += forwardness;
 
-                    if name.starts_with("*") {
-                        self.statements.push(ASTOperation::StaticVariable(
-                            name.replacen("*", "", 1),
-                            statements.to_vec(),
-                        ));
+                    let operation = if name.starts_with("*") {
+                        ASTOperation::StaticVariable(name.replacen("*", "", 1), statements.to_vec())
                     } else {
+                        ASTOperation::AssignVariable(name, statements.to_vec())
+                    };
+
+                    if export_next {
                         self.statements
-                            .push(ASTOperation::AssignVariable(name, statements.to_vec()));
+                            .push(ASTOperation::Export(Box::new(operation)));
+                        export_next = false;
+                    } else {
+                        self.statements.push(operation);
                     }
                 }
                 Tokens::Bracket(tokens) => {
@@ -118,6 +123,12 @@ impl AST {
                 Tokens::Bool(bool) => {
                     self.statements.push(ASTOperation::LiteralBool(bool));
                 }
+                Tokens::Export => {
+                    export_next = true;
+                }
+                Tokens::Import(name) => {
+                    self.statements.push(ASTOperation::Import(name));
+                }
                 Tokens::Symbol(reference) => {
                     let next_token = self.peek(1);
                     if next_token == Tokens::Assignment {
@@ -126,7 +137,7 @@ impl AST {
                         let statements = self.get_statements_from_tokens(&statements);
                         self.index += forwardness;
                         self.statements
-                            .push(ASTOperation::MutateVariable(reference, statements.to_vec()));
+                            .push(ASTOperation::AssignVariable(reference, statements.to_vec()));
                     } else if discriminant(&Tokens::Period(vec![])) == discriminant(&next_token) {
                         self.index += 1;
                         let (tokens, forwardness, _) = self.get_tokens_until_mult(
@@ -184,6 +195,42 @@ impl AST {
                         conditional_statements.to_vec(),
                         Box::new(ASTOperation::CodeBlock(statements.to_vec())),
                     ));
+                }
+                Tokens::Function(name, variables) => {
+                    if self.peek(1) != Tokens::LBrace {
+                        eprintln!("Expected Left curly brace.");
+                        exit(1);
+                    }
+                    self.index += 1;
+                    let (tokens, forwardness) = self.get_tokens_until(Tokens::RBrace);
+                    let statements = self.get_statements_from_tokens(&tokens);
+                    self.index += forwardness;
+                    let mut assigned_variables: Vec<String> = vec![];
+                    for variable in variables {
+                        if let Tokens::Symbol(str) = variable {
+                            assigned_variables.push(str);
+                        } else {
+                            eprintln!("Expected variable name.");
+                            exit(1);
+                        }
+                    }
+
+                    if export_next {
+                        self.statements.push(ASTOperation::Export(Box::new(
+                            ASTOperation::CreateFunction(
+                                name,
+                                assigned_variables,
+                                statements.to_vec(),
+                            ),
+                        )));
+                        export_next = false;
+                    } else {
+                        self.statements.push(ASTOperation::CreateFunction(
+                            name,
+                            assigned_variables,
+                            statements.to_vec(),
+                        ));
+                    }
                 }
                 Tokens::While(name, iterator_tokens) => {
                     let iterator_statements = self.get_statements_from_tokens(&iterator_tokens);

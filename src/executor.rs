@@ -1,33 +1,63 @@
-use std::{fs, process::exit};
+use std::{collections::HashMap, fs, process::exit};
 
 use crate::{
     ast::constructor::AST,
-    compile::compiler::Compiler,
+    compile::compiler::{Compiler, Scope},
     errors::error::{std_error, StdErrors},
     lexer::lexer::Lexer,
 };
 
 pub fn run() {
-    let code = fs::read_to_string("code.mc");
-    if code.is_err() {
+    let files = fs::read_dir("inputs");
+    let namespace = "test";
+    if files.is_err() {
         std_error(StdErrors::IOError(
-            "Failed to access file. Does it exist or lacking permissions?",
+            "Failed to access directory. Does it exist or lacking permissions?",
         ));
         exit(1);
     }
-    let code: String = code.unwrap();
-    let mut lexer = Lexer::new(code);
-    lexer.tokenizer();
 
-    let tokens = lexer.flush();
-    let mut ast = AST::new(tokens.to_vec());
+    let files = files.unwrap();
+
+    let mut compiler = Compiler::new(namespace);
+    for file in files.into_iter() {
+        let file = file.unwrap();
+        let path = file.path();
+        let code = fs::read_to_string(path);
+        if code.is_err() {
+            std_error(StdErrors::IOError(
+                "Failed to access file. Does it exist or lacking permissions?",
+            ));
+            exit(1);
+        }
+        let code: String = code.unwrap();
+        compiler.prepared_files.insert(
+            file.file_name()
+                .into_string()
+                .unwrap()
+                .strip_suffix(".mc")
+                .unwrap()
+                .to_string(),
+            code,
+        );
+    }
+
+    // compile the code scope
+    let code = compiler.prepared_files.get("code").unwrap();
+
+    let mut lexer = Lexer::new(code.to_string());
+    lexer.tokenizer();
+    let mut ast = AST::new(lexer.flush().to_vec());
     ast.generate();
-    println!("{:#?}", ast.flush());
-    let mut compiler = Compiler::new(ast.flush().to_vec(), "test");
-    let mut scope = compiler.scopes[0].clone();
+    let mut scope = Scope::new(
+        format!("{}", "code"),
+        "test".to_string(),
+        ast.flush().to_vec(),
+        HashMap::new(),
+    );
+    compiler.scopes.push(scope.clone());
     compiler.compile(&mut scope);
 
-    // make directory "outputs"
     let current_path = std::env::current_dir().unwrap();
 
     if current_path.join("outputs").exists() {
