@@ -1,6 +1,13 @@
-use std::{mem::discriminant, process::exit};
+use std::{
+    mem::{discriminant, Discriminant},
+    process::exit,
+};
 
-use crate::{ast::operations::Operator, lexer::tokens::Tokens};
+use crate::{
+    ast::operations::Operator,
+    errors::associate::CodeAssociate,
+    lexer::{lexer::empty_associate, tokens::Tokens},
+};
 
 use super::operations::{ASTOperation, NodeStatement};
 
@@ -41,7 +48,7 @@ impl AST {
         let mut forwardness = 0;
         while self.tokens.len() != self.index + forwardness {
             let current_token = self.tokens[self.index + forwardness].clone();
-            if current_token == token {
+            if discriminant(&current_token) == discriminant(&token) {
                 break;
             }
             tokens.push(current_token);
@@ -50,13 +57,21 @@ impl AST {
         (tokens, forwardness)
     }
 
-    pub fn get_tokens_until_mult(&self, tokens: Vec<Tokens>) -> (Vec<Tokens>, usize, Tokens) {
+    pub fn get_tokens_until_mult(
+        &self,
+        original_tokens: Vec<Tokens>,
+    ) -> (Vec<Tokens>, usize, Tokens) {
         let mut sent_tokens = vec![];
         let mut forwardness = 0;
         let mut ending_token = Tokens::EOL;
+        let mut tokens: Vec<Discriminant<Tokens>> = vec![];
+        for token in original_tokens {
+            tokens.push(discriminant(&token));
+        }
+
         while self.tokens.len() != self.index + forwardness {
             let current_token = self.tokens[self.index + forwardness].clone();
-            if tokens.contains(&current_token) {
+            if tokens.contains(&discriminant(&current_token)) {
                 ending_token = current_token;
                 forwardness -= 1;
                 break;
@@ -67,12 +82,16 @@ impl AST {
         (sent_tokens, forwardness, ending_token)
     }
 
-    pub fn get_statements_from_tokens(&self, tokens: &Vec<Tokens>) -> Vec<ASTOperation> {
+    pub fn get_statements_from_tokens(
+        &self,
+        tokens: &Vec<Tokens>,
+        associate: CodeAssociate,
+    ) -> Vec<ASTOperation> {
         let mut ast = AST::new(tokens.to_vec());
         ast.generate();
         let statements = ast.flush();
         if statements.len() > 1 {
-            return vec![ASTOperation::Set(statements.to_vec())];
+            return vec![ASTOperation::Set(statements.to_vec(), associate)];
         }
         return ast.flush().to_vec();
     }
@@ -84,78 +103,99 @@ impl AST {
         while self.tokens.len() > self.index {
             let current_token = self.peek(0);
             match current_token {
-                Tokens::Let(name) => {
-                    if self.peek(1) != Tokens::Assignment {
+                Tokens::Let(name, associate) => {
+                    if discriminant(&self.peek(1))
+                        != discriminant(&Tokens::Assignment(empty_associate()))
+                    {
                         eprintln!("Expected assignment operator.");
                         exit(1);
                     }
                     // check the name to see if it's a static variable
                     self.index += 1;
-                    let (statements, forwardness) = self.get_tokens_until(Tokens::SemiColon);
-                    let statements = self.get_statements_from_tokens(&statements);
+                    let (statements, forwardness) =
+                        self.get_tokens_until(Tokens::SemiColon(empty_associate()));
+                    let statements =
+                        self.get_statements_from_tokens(&statements, associate.clone());
                     self.index += forwardness;
 
                     let operation = if name.starts_with("*") {
-                        ASTOperation::StaticVariable(name.replacen("*", "", 1), statements.to_vec())
+                        ASTOperation::StaticVariable(
+                            name.replacen("*", "", 1),
+                            statements.to_vec(),
+                            associate.clone(),
+                        )
                     } else {
-                        ASTOperation::AssignVariable(name, statements.to_vec())
+                        ASTOperation::AssignVariable(name, statements.to_vec(), associate.clone())
                     };
 
                     if export_next {
                         self.statements
-                            .push(ASTOperation::Export(Box::new(operation)));
+                            .push(ASTOperation::Export(Box::new(operation), associate.clone()));
                         export_next = false;
                     } else {
                         self.statements.push(operation);
                     }
                 }
-                Tokens::Bracket(tokens) => {
-                    let statements = self.get_statements_from_tokens(&tokens);
-                    self.statements.push(ASTOperation::Set(statements));
-                }
-                Tokens::Number(str) => {
+                Tokens::Bracket(tokens, associate) => {
+                    let statements = self.get_statements_from_tokens(&tokens, associate.clone());
                     self.statements
-                        .push(ASTOperation::LiteralNumber(str.parse().unwrap()));
+                        .push(ASTOperation::Set(statements, associate));
                 }
-                Tokens::DblQuote(str) => {
-                    self.statements.push(ASTOperation::LiteralString(str));
+                Tokens::Number(str, associate) => {
+                    self.statements
+                        .push(ASTOperation::LiteralNumber(str.parse().unwrap(), associate));
                 }
-                Tokens::Bool(bool) => {
-                    self.statements.push(ASTOperation::LiteralBool(bool));
+                Tokens::DblQuote(str, associate) => {
+                    self.statements
+                        .push(ASTOperation::LiteralString(str, associate));
                 }
-                Tokens::Export => {
+                Tokens::Bool(bool, associate) => {
+                    self.statements
+                        .push(ASTOperation::LiteralBool(bool, associate));
+                }
+                Tokens::Export(associate) => {
                     export_next = true;
                 }
-                Tokens::Import(name) => {
-                    self.statements.push(ASTOperation::Import(name));
+                Tokens::Import(name, associate) => {
+                    self.statements.push(ASTOperation::Import(name, associate));
                 }
-                Tokens::Symbol(reference) => {
+                Tokens::Symbol(reference, associate) => {
                     let next_token = self.peek(1);
-                    if next_token == Tokens::Assignment {
+                    if discriminant(&next_token)
+                        == discriminant(&Tokens::Assignment(empty_associate()))
+                    {
                         self.index += 1;
-                        let (statements, forwardness) = self.get_tokens_until(Tokens::SemiColon);
-                        let statements = self.get_statements_from_tokens(&statements);
+                        let (statements, forwardness) =
+                            self.get_tokens_until(Tokens::SemiColon(empty_associate()));
+                        let statements =
+                            self.get_statements_from_tokens(&statements, associate.clone());
                         self.index += forwardness;
-                        self.statements
-                            .push(ASTOperation::AssignVariable(reference, statements.to_vec()));
-                    } else if discriminant(&Tokens::Period(vec![])) == discriminant(&next_token) {
+                        self.statements.push(ASTOperation::AssignVariable(
+                            reference,
+                            statements.to_vec(),
+                            associate,
+                        ));
+                    } else if discriminant(&Tokens::Period(vec![], empty_associate()))
+                        == discriminant(&next_token)
+                    {
                         self.index += 1;
                         let (tokens, forwardness, _) = self.get_tokens_until_mult(
                             [
-                                Tokens::SemiColon,
-                                Tokens::And,
-                                Tokens::Or,
-                                Tokens::LesserThan,
-                                Tokens::LesserThanEqual,
-                                Tokens::GreaterThan,
-                                Tokens::GreaterThanEqual,
-                                Tokens::NotEqual,
-                                Tokens::Equivalence,
+                                Tokens::SemiColon(empty_associate()),
+                                Tokens::And(empty_associate()),
+                                Tokens::Or(empty_associate()),
+                                Tokens::LesserThan(empty_associate()),
+                                Tokens::LesserThanEqual(empty_associate()),
+                                Tokens::GreaterThan(empty_associate()),
+                                Tokens::GreaterThanEqual(empty_associate()),
+                                Tokens::NotEqual(empty_associate()),
+                                Tokens::Equivalence(empty_associate()),
                             ]
                             .to_vec(),
                         );
 
-                        let statements = self.get_statements_from_tokens(&tokens);
+                        let statements =
+                            self.get_statements_from_tokens(&tokens, associate.clone());
                         if statements.len() > 1 || statements.len() == 0 {
                             eprintln!("Expected single statement.");
                             exit(1);
@@ -165,49 +205,69 @@ impl AST {
                         self.statements.push(ASTOperation::UseVariable(
                             reference,
                             Box::new(statements[0].clone()),
+                            associate,
                         ));
-                    } else if discriminant(&Tokens::Parens(vec![])) == discriminant(&next_token) {
-                        let statements = self.get_statements_from_tokens(&vec![self.peek(1)]);
+                    } else if discriminant(&Tokens::Parens(vec![], empty_associate()))
+                        == discriminant(&next_token)
+                    {
+                        let statements =
+                            self.get_statements_from_tokens(&vec![self.peek(1)], empty_associate());
                         if statements.len() > 1 || statements.len() == 0 {
                             eprintln!("Expected single statement.");
                             exit(1);
                         }
                         self.index += 1;
-                        self.statements
-                            .push(ASTOperation::Function(reference, statements.to_vec()));
+                        self.statements.push(ASTOperation::Function(
+                            reference,
+                            statements.to_vec(),
+                            associate,
+                        ));
                     } else {
-                        self.statements.push(ASTOperation::Access(reference));
+                        self.statements
+                            .push(ASTOperation::Access(reference, associate));
                     }
                 }
-                Tokens::If(conditional_tokens) => {
+                Tokens::If(conditional_tokens, associate) => {
                     let conditional_statements =
-                        self.get_statements_from_tokens(&conditional_tokens);
+                        self.get_statements_from_tokens(&conditional_tokens, associate.clone());
                     // expect a Left curly brace
-                    if self.peek(1) != Tokens::LBrace {
+                    if discriminant(&self.peek(1))
+                        != discriminant(&Tokens::LBrace(empty_associate()))
+                    {
                         eprintln!("Expected Left curly brace.");
                         exit(1);
                     }
                     self.index += 1;
-                    let (tokens, forwardness) = self.get_tokens_until(Tokens::RBrace);
-                    let statements = self.get_statements_from_tokens(&tokens);
+                    let (tokens, forwardness) =
+                        self.get_tokens_until(Tokens::RBrace(empty_associate()));
+                    let statements = self.get_statements_from_tokens(&tokens, associate.clone());
                     self.index += forwardness;
+
+                    // TODO: Fix the associater here
                     self.statements.push(ASTOperation::If(
                         conditional_statements.to_vec(),
-                        Box::new(ASTOperation::CodeBlock(statements.to_vec())),
+                        Box::new(ASTOperation::CodeBlock(
+                            statements.to_vec(),
+                            associate.clone(),
+                        )),
+                        associate,
                     ));
                 }
-                Tokens::Function(name, variables) => {
-                    if self.peek(1) != Tokens::LBrace {
+                Tokens::Function(name, variables, associate) => {
+                    if discriminant(&self.peek(1))
+                        != discriminant(&Tokens::LBrace(empty_associate()))
+                    {
                         eprintln!("Expected Left curly brace.");
                         exit(1);
                     }
                     self.index += 1;
-                    let (tokens, forwardness) = self.get_tokens_until(Tokens::RBrace);
-                    let statements = self.get_statements_from_tokens(&tokens);
+                    let (tokens, forwardness) =
+                        self.get_tokens_until(Tokens::RBrace(empty_associate()));
+                    let statements = self.get_statements_from_tokens(&tokens, associate.clone());
                     self.index += forwardness;
                     let mut assigned_variables: Vec<String> = vec![];
                     for variable in variables {
-                        if let Tokens::Symbol(str) = variable {
+                        if let Tokens::Symbol(str, _) = variable {
                             assigned_variables.push(str);
                         } else {
                             eprintln!("Expected variable name.");
@@ -216,98 +276,125 @@ impl AST {
                     }
 
                     if export_next {
-                        self.statements.push(ASTOperation::Export(Box::new(
-                            ASTOperation::CreateFunction(
+                        self.statements.push(ASTOperation::Export(
+                            Box::new(ASTOperation::CreateFunction(
                                 name,
                                 assigned_variables,
                                 statements.to_vec(),
-                            ),
-                        )));
+                                associate.clone(),
+                            )),
+                            associate.clone(),
+                        ));
                         export_next = false;
                     } else {
                         self.statements.push(ASTOperation::CreateFunction(
                             name,
                             assigned_variables,
                             statements.to_vec(),
+                            associate.clone(),
                         ));
                     }
                 }
-                Tokens::While(name, iterator_tokens) => {
-                    let iterator_statements = self.get_statements_from_tokens(&iterator_tokens);
+                Tokens::While(name, iterator_tokens, associate) => {
+                    let iterator_statements =
+                        self.get_statements_from_tokens(&iterator_tokens, associate.clone());
                     // expect a Left curly brace
-                    if self.peek(1) != Tokens::LBrace {
+                    if discriminant(&self.peek(1))
+                        != discriminant(&Tokens::LBrace(empty_associate()))
+                    {
                         eprintln!("Expected Left curly brace.");
                         exit(1);
                     }
                     self.index += 1;
-                    let (tokens, forwardness) = self.get_tokens_until(Tokens::RBrace);
-                    let statements = self.get_statements_from_tokens(&tokens);
+                    let (tokens, forwardness) =
+                        self.get_tokens_until(Tokens::RBrace(empty_associate()));
+                    let statements = self.get_statements_from_tokens(&tokens, associate.clone());
                     self.index += forwardness;
+                    // TODO: Here too :)
                     self.statements.push(ASTOperation::While(
                         name,
                         iterator_statements.to_vec(),
-                        Box::new(ASTOperation::CodeBlock(statements.to_vec())),
+                        Box::new(ASTOperation::CodeBlock(
+                            statements.to_vec(),
+                            associate.clone(),
+                        )),
+                        associate.clone(),
                     ));
                 }
-                Tokens::Period(statements) => {
-                    let statements = self.get_statements_from_tokens(&statements);
-                    self.statements
-                        .push(ASTOperation::AccessPart(Box::new(statements[0].clone())));
+                Tokens::Period(statements, associate) => {
+                    let statements =
+                        self.get_statements_from_tokens(&statements, associate.clone());
+                    self.statements.push(ASTOperation::AccessPart(
+                        Box::new(statements[0].clone()),
+                        associate,
+                    ));
                 }
-                Tokens::New(obj_name, statement_tokens) => {
-                    let statements = self.get_statements_from_tokens(&statement_tokens);
-                    self.statements
-                        .push(ASTOperation::Create(obj_name, statements.to_vec()));
+                Tokens::New(obj_name, statement_tokens, associate) => {
+                    let statements =
+                        self.get_statements_from_tokens(&statement_tokens, associate.clone());
+                    self.statements.push(ASTOperation::Create(
+                        obj_name,
+                        statements.to_vec(),
+                        associate,
+                    ));
                 }
 
-                Tokens::Add => {
+                Tokens::Add(associate) => {
                     let next_token = self.peek(1);
                     let last_token = self.last(1);
-                    if next_token == Tokens::Assignment
+                    if discriminant(&next_token)
+                        == discriminant(&Tokens::Assignment(empty_associate()))
                         && discriminant(&last_token)
-                            == discriminant(&Tokens::Symbol("".to_string()))
+                            == discriminant(&Tokens::Symbol("".to_string(), empty_associate()))
                     {
                         self.statements.pop();
-                        if let Tokens::Symbol(reference) = last_token {
+                        if let Tokens::Symbol(reference, associate) = last_token {
                             self.index += 1;
                             let (statements, forwardness) =
-                                self.get_tokens_until(Tokens::SemiColon);
-                            let statements = self.get_statements_from_tokens(&statements);
+                                self.get_tokens_until(Tokens::SemiColon(empty_associate()));
+                            let statements =
+                                self.get_statements_from_tokens(&statements, associate.clone());
                             self.index += forwardness;
                             self.statements.push(ASTOperation::MutateVariable(
                                 reference.clone(),
                                 vec![ASTOperation::Operation(
-                                    Box::new(ASTOperation::Access(reference)),
+                                    Box::new(ASTOperation::Access(reference, associate.clone())),
                                     Operator::Add,
                                     Box::new(statements[0].clone()),
+                                    associate.clone(),
                                 )],
+                                associate.clone(),
                             ));
                         }
                     } else {
                         operand = Some(Operator::Add);
                     }
                 }
-                Tokens::Subtract => {
+                Tokens::Subtract(associate) => {
                     let next_token = self.peek(1);
                     let last_token = self.last(1);
-                    if next_token == Tokens::Assignment
+                    if discriminant(&next_token)
+                        == discriminant(&Tokens::Assignment(empty_associate()))
                         && discriminant(&last_token)
-                            == discriminant(&Tokens::Symbol("".to_string()))
+                            == discriminant(&Tokens::Symbol("".to_string(), empty_associate()))
                     {
                         self.statements.pop();
-                        if let Tokens::Symbol(reference) = last_token {
+                        if let Tokens::Symbol(reference, associate) = last_token {
                             self.index += 1;
                             let (statements, forwardness) =
-                                self.get_tokens_until(Tokens::SemiColon);
-                            let statements = self.get_statements_from_tokens(&statements);
+                                self.get_tokens_until(Tokens::SemiColon(empty_associate()));
+                            let statements =
+                                self.get_statements_from_tokens(&statements, associate.clone());
                             self.index += forwardness;
                             self.statements.push(ASTOperation::MutateVariable(
                                 reference.clone(),
                                 vec![ASTOperation::Operation(
-                                    Box::new(ASTOperation::Access(reference)),
+                                    Box::new(ASTOperation::Access(reference, associate.clone())),
                                     Operator::Subtract,
                                     Box::new(statements[0].clone()),
+                                    associate.clone(),
                                 )],
+                                associate,
                             ));
                         }
                     } else {
@@ -315,19 +402,21 @@ impl AST {
                     }
                 }
 
-                Tokens::Parens(statement_tokens) => {
-                    let statements = self.get_statements_from_tokens(&statement_tokens);
-                    self.statements.push(ASTOperation::Set(statements.to_vec()));
+                Tokens::Parens(statement_tokens, associate) => {
+                    let statements =
+                        self.get_statements_from_tokens(&statement_tokens, associate.clone());
+                    self.statements
+                        .push(ASTOperation::Set(statements.to_vec(), associate));
                 }
 
-                Tokens::And => {
+                Tokens::And(_) => {
                     combind_ifs = Some(Operator::And);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::Or => {
+                Tokens::Or(_) => {
                     combind_ifs = Some(Operator::Or);
                     // priming operation for next iteration
                     position_in_line += 1;
@@ -335,63 +424,63 @@ impl AST {
                     continue;
                 }
 
-                Tokens::Equivalence => {
+                Tokens::Equivalence(_) => {
                     operand = Some(Operator::Equal);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::GreaterThan => {
+                Tokens::GreaterThan(_) => {
                     operand = Some(Operator::GreaterThan);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::GreaterThanEqual => {
+                Tokens::GreaterThanEqual(_) => {
                     operand = Some(Operator::GreaterThanEqual);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::LesserThan => {
+                Tokens::LesserThan(_) => {
                     operand = Some(Operator::LessThan);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::LesserThanEqual => {
+                Tokens::LesserThanEqual(_) => {
                     operand = Some(Operator::LessThanEqual);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::NotEqual => {
+                Tokens::NotEqual(_) => {
                     operand = Some(Operator::NotEqual);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::Multiply => {
+                Tokens::Multiply(_) => {
                     operand = Some(Operator::Multiply);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::Divide => {
+                Tokens::Divide(_) => {
                     operand = Some(Operator::Divide);
                     // priming operation for next iteration
                     position_in_line += 1;
                     self.index += 1;
                     continue;
                 }
-                Tokens::Modulus => {
+                Tokens::Modulus(_) => {
                     operand = Some(Operator::Modulus);
                     // priming operation for next iteration
                     position_in_line += 1;
@@ -399,7 +488,7 @@ impl AST {
                     continue;
                 }
 
-                Tokens::SemiColon => {
+                Tokens::SemiColon(_) => {
                     position_in_line = 0;
                 }
                 Tokens::EOL | Tokens::EOF => {
@@ -415,19 +504,24 @@ impl AST {
 
                 if pop_last.is_some()
                     && pop_second.is_some()
-                    && (pop_second_discrim == discriminant(&ASTOperation::Access("".to_string()))
-                        || pop_second_discrim == discriminant(&ASTOperation::LiteralNumber(0))
-                        || pop_second_discrim == discriminant(&ASTOperation::LiteralBool(true))
+                    && (pop_second_discrim
+                        == discriminant(&ASTOperation::Access("".to_string(), empty_associate()))
+                        || pop_second_discrim
+                            == discriminant(&ASTOperation::LiteralNumber(0, empty_associate()))
+                        || pop_second_discrim
+                            == discriminant(&ASTOperation::LiteralBool(true, empty_associate()))
                         || pop_second_discrim
                             == discriminant(&ASTOperation::UseVariable(
                                 "".to_string(),
-                                Box::new(ASTOperation::LiteralNumber(0)),
+                                Box::new(ASTOperation::LiteralNumber(0, empty_associate())),
+                                empty_associate(),
                             )))
                 {
                     self.statements.push(ASTOperation::Operation(
                         Box::new(pop_second.unwrap()),
                         operand.as_ref().unwrap().clone(),
                         Box::new(pop_last.unwrap()),
+                        empty_associate(),
                     ));
                     operand = None;
                 } else {
@@ -448,23 +542,28 @@ impl AST {
                     let pop_last_discrim = discriminant(pop_last.as_ref().unwrap());
                     if pop_last_discrim
                         == discriminant(&ASTOperation::Operation(
-                            Box::new(ASTOperation::LiteralBool(true)),
+                            Box::new(ASTOperation::LiteralBool(true, empty_associate())),
                             Operator::Equal,
-                            Box::new(ASTOperation::LiteralBool(true)),
+                            Box::new(ASTOperation::LiteralBool(true, empty_associate())),
+                            empty_associate(),
                         ))
                     {
                         self.statements.push(ASTOperation::Operation(
                             Box::new(pop_second.unwrap()),
                             combind_ifs.as_ref().unwrap().clone(),
                             Box::new(pop_last.unwrap()),
+                            empty_associate(),
                         ));
                     }
                     // or if it's a Set
-                    else if pop_last_discrim == discriminant(&ASTOperation::Set(vec![])) {
+                    else if pop_last_discrim
+                        == discriminant(&ASTOperation::Set(vec![], empty_associate()))
+                    {
                         self.statements.push(ASTOperation::Operation(
                             Box::new(pop_second.unwrap()),
                             combind_ifs.as_ref().unwrap().clone(),
                             Box::new(pop_last.unwrap()),
+                            empty_associate(),
                         ));
                     } else {
                         if pop_second.is_some() {

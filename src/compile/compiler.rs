@@ -170,16 +170,16 @@ impl Scope {
         compiler: &mut Compiler,
     ) -> Rc<dyn Object> {
         match instruction {
-            ASTOperation::LiteralString(str) => {
+            ASTOperation::LiteralString(str, associate) => {
                 return match_objects(Objects::String(str.clone()));
             }
-            ASTOperation::LiteralNumber(num) => {
+            ASTOperation::LiteralNumber(num, associate) => {
                 return match_objects(Objects::Number(*num));
             }
-            ASTOperation::LiteralBool(bool) => {
+            ASTOperation::LiteralBool(bool, associate) => {
                 return match_objects(Objects::Boolean(*bool));
             }
-            ASTOperation::Export(statement) => {
+            ASTOperation::Export(statement, associate) => {
                 let value = self.execute(&statement, current_variable, compiler);
                 println!("Exporting: {:?}", value.get_type());
                 if let Objects::Variable(_, _) = value.get_type() {
@@ -194,7 +194,7 @@ impl Scope {
                 }
                 return match_objects(value.get_type());
             }
-            ASTOperation::Import(name) => {
+            ASTOperation::Import(name, associate) => {
                 let existing_scope = compiler.scopes.iter().find(|scope| scope.name == *name);
                 let mut just_initialized = false;
                 let existing_scope = if existing_scope.is_none() {
@@ -205,7 +205,7 @@ impl Scope {
                     }
 
                     let reference = reference.unwrap().to_string();
-                    let mut lexer = Lexer::new(reference);
+                    let mut lexer = Lexer::new(reference, "test".to_string());
                     lexer.tokenizer();
                     let mut ast = AST::new(lexer.flush().to_vec());
                     ast.generate();
@@ -240,7 +240,7 @@ impl Scope {
                     return match_objects(Objects::Unknown);
                 }
             }
-            ASTOperation::AssignVariable(name, operation) => {
+            ASTOperation::AssignVariable(name, operation, associate) => {
                 if operation.len() != 1 {
                     eprintln!("More than 1 operation in assign variable");
                     exit(1);
@@ -292,7 +292,7 @@ impl Scope {
                 );
                 return variable;
             }
-            ASTOperation::StaticVariable(name, operation) => {
+            ASTOperation::StaticVariable(name, operation, associate) => {
                 if operation.len() != 1 {
                     eprintln!("More than 1 operation in assign variable");
                     exit(1);
@@ -318,7 +318,7 @@ impl Scope {
                 );
                 return match_objects(Objects::Unknown);
             }
-            ASTOperation::MutateVariable(name, operation) => {
+            ASTOperation::MutateVariable(name, operation, associate) => {
                 if operation.len() != 1 {
                     eprintln!("More than 1 operation in assign variable");
                     exit(1);
@@ -456,7 +456,7 @@ impl Scope {
                     Box::new(*new_obj.clone()),
                 ));
             }
-            ASTOperation::Access(name) => {
+            ASTOperation::Access(name, associate) => {
                 if current_variable.is_none() {
                     if !self.variables.contains_key(name) {
                         eprintln!("Variable {} does not exist", name);
@@ -501,7 +501,7 @@ impl Scope {
                 let variable = variables.get(name).expect("Unknown variable");
                 return variable.clone();
             }
-            ASTOperation::UseVariable(name, operation) => {
+            ASTOperation::UseVariable(name, operation, associate) => {
                 if current_variable.is_none() {
                     let variable = self.variables.get(name).expect("Variable not found");
                     let value = self.execute(&operation, Some(variable.clone()), compiler);
@@ -530,11 +530,11 @@ impl Scope {
                 return value;
             }
             // runs this inside of the variable
-            ASTOperation::AccessPart(operation) => {
+            ASTOperation::AccessPart(operation, associate) => {
                 let value = self.execute(&operation, current_variable, compiler);
                 return value;
             }
-            ASTOperation::Operation(first_statement, operator, second_statement) => {
+            ASTOperation::Operation(first_statement, operator, second_statement, associate) => {
                 let first_value =
                     self.execute(&first_statement, current_variable.clone(), compiler);
                 let second_value =
@@ -685,7 +685,7 @@ impl Scope {
                     ])));
                 }
             }
-            ASTOperation::If(operations, codeblock) => {
+            ASTOperation::If(operations, codeblock, associate) => {
                 let mut values: Vec<Rc<dyn Object>> = vec![];
                 for operation in operations {
                     println!("Executing: {:?}", operation);
@@ -694,7 +694,7 @@ impl Scope {
 
                 return match_objects(Objects::IfStatement(values, codeblock.clone()));
             }
-            ASTOperation::CreateFunction(name, arguments, code) => {
+            ASTOperation::CreateFunction(name, arguments, code, associate) => {
                 let function = Function {
                     name: name.clone(),
                     arguments: arguments.clone(),
@@ -703,9 +703,9 @@ impl Scope {
                 self.functions.insert(name.clone(), function);
                 return match_objects(Objects::CreatedFunction);
             }
-            ASTOperation::Function(name, set) => {
+            ASTOperation::Function(name, set, associate) => {
                 let mut items: Vec<Rc<dyn Object>> = vec![];
-                if let ASTOperation::Set(operations) = &set[0] {
+                if let ASTOperation::Set(operations, associate) = &set[0] {
                     for operation in operations {
                         let execution = self.execute(&operation, None, compiler);
 
@@ -840,7 +840,7 @@ impl Scope {
                 );
             }
 
-            ASTOperation::While(name, set, code) => {
+            ASTOperation::While(name, set, code, associate) => {
                 println!("While: {:?} {:?} {:?}", name, set, code);
                 // if the operation is instead an access, then we need to get the variable.
                 let mut iterator = self.execute(&set[0], current_variable.clone(), compiler);
@@ -858,7 +858,7 @@ impl Scope {
                 }
             }
 
-            ASTOperation::Create(object_name, params) => {
+            ASTOperation::Create(object_name, params, associate) => {
                 let object = name_into_object(object_name);
                 let object = object.get_functions();
                 let function = object.get("instantiate");
@@ -867,7 +867,7 @@ impl Scope {
                     exit(1);
                 }
                 let function = function.unwrap();
-                if let ASTOperation::Set(operations) = &params[0] {
+                if let ASTOperation::Set(operations, associate) = &params[0] {
                     let mut items: Vec<Rc<dyn Object>> = vec![];
 
                     for operation in operations {
@@ -891,7 +891,7 @@ impl Scope {
                     exit(1);
                 }
             }
-            ASTOperation::Set(multiple) => {
+            ASTOperation::Set(multiple, associate) => {
                 let mut set_values: Vec<Rc<dyn Object>> = vec![];
                 for operation in multiple {
                     set_values.push(self.execute(&operation, current_variable.clone(), compiler));

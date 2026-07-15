@@ -1,6 +1,9 @@
 use std::process::exit;
 
-use crate::errors::error::{std_error, StdErrors};
+use crate::errors::{
+    associate::CodeAssociate,
+    error::{std_error, StdErrors},
+};
 
 use super::tokens::Tokens;
 
@@ -9,10 +12,11 @@ pub struct Lexer {
     line: usize,
     column: usize,
     tokens: Vec<Tokens>,
+    file_name: String,
 }
 
 impl Lexer {
-    pub fn new(file: String) -> Lexer {
+    pub fn new(file: String, file_name: String) -> Lexer {
         let mut raw_tokens: Vec<Vec<char>> = vec![];
         for line in file.split("\n").collect::<Vec<&str>>() {
             raw_tokens.push(line.chars().collect());
@@ -21,6 +25,7 @@ impl Lexer {
             raw_tokens,
             line: 0usize,
             column: 0usize,
+            file_name,
             tokens: vec![],
         }
     }
@@ -133,12 +138,28 @@ impl Lexer {
         return (new_str.trim().to_string(), tracked_col);
     }
 
+    pub fn mk_association(
+        &self,
+        line: &String,
+        starting_column: usize,
+        ending_column: usize,
+        line_num: usize,
+    ) -> CodeAssociate {
+        CodeAssociate {
+            lines: line.to_string(),
+            file: self.file_name.clone(),
+            line: line_num,
+            start_column: starting_column,
+            end_column: ending_column,
+        }
+    }
     pub fn tokenizer(&mut self) {
         for raw_line in &self.raw_tokens {
             self.line += 1;
             self.column = 0;
             let mut built_str = String::new();
 
+            let original_line: String = raw_line.iter().collect();
             while self.column != raw_line.len() {
                 self.column += 1;
                 let char = self.peek(0);
@@ -146,6 +167,8 @@ impl Lexer {
                     break;
                 }
                 built_str.push(char);
+
+                let starting_column = self.column;
                 match built_str.trim_start() {
                     "let " | "const " => {
                         let constant = if built_str.trim_start() == "const " {
@@ -156,7 +179,6 @@ impl Lexer {
 
                         built_str.clear();
                         let (var_name, forwardness) = self.read_until("=");
-
                         self.column += forwardness;
 
                         let var_name = if constant {
@@ -165,64 +187,130 @@ impl Lexer {
                             var_name.trim().to_string()
                         };
 
-                        self.tokens.push(Tokens::Let(var_name));
+                        self.tokens.push(Tokens::Let(
+                            var_name,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "import " => {
                         built_str.clear();
                         let (import_name, forwardness) = self.read_until(";");
                         self.column += forwardness;
-                        self.tokens
-                            .push(Tokens::Import(import_name.trim().to_string()));
+                        self.tokens.push(Tokens::Import(
+                            import_name.trim().to_string(),
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "export " => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Export);
+                        self.tokens.push(Tokens::Export(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "=" => {
                         // this means that this is an equivalence operator
                         built_str.clear();
                         if self.peek(1) == '=' {
                             self.column += 1;
-                            self.tokens.push(Tokens::Equivalence);
+                            self.tokens.push(Tokens::Equivalence(self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            )));
                         }
                         // otherwise, this is just a single assignment operator
                         else {
-                            self.tokens.push(Tokens::Assignment);
+                            self.tokens.push(Tokens::Assignment(self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            )));
                         }
                     }
                     "!=" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::NotEqual);
+                        self.tokens.push(Tokens::NotEqual(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     ">" => {
                         built_str.clear();
                         if self.peek(1) == '=' {
                             self.column += 1;
-                            self.tokens.push(Tokens::GreaterThanEqual);
+                            self.tokens
+                                .push(Tokens::GreaterThanEqual(self.mk_association(
+                                    &original_line,
+                                    starting_column,
+                                    self.column,
+                                    self.line,
+                                )));
                         } else {
-                            self.tokens.push(Tokens::GreaterThan);
+                            self.tokens.push(Tokens::GreaterThan(self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            )));
                         }
                     }
                     "<" => {
                         built_str.clear();
                         if self.peek(1) == '=' {
                             self.column += 1;
-                            self.tokens.push(Tokens::LesserThanEqual);
+                            self.tokens
+                                .push(Tokens::LesserThanEqual(self.mk_association(
+                                    &original_line,
+                                    starting_column,
+                                    self.column,
+                                    self.line,
+                                )));
                         } else {
-                            self.tokens.push(Tokens::LesserThan);
+                            self.tokens.push(Tokens::LesserThan(self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            )));
                         }
                     }
                     "if " => {
                         built_str.clear();
                         let (boolean, forwardness) = self.read_until("{");
                         self.column += forwardness;
-                        let mut lexer = Lexer::new(boolean.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(boolean.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
-                        self.tokens.push(Tokens::If(tokens));
+                        self.tokens.push(Tokens::If(
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "fn " => {
                         built_str.clear();
@@ -230,14 +318,23 @@ impl Lexer {
                         self.column += forwardness + 1;
                         let (function_args, forwardness) = self.read_until_last('(', ')');
                         self.column += forwardness;
-                        let mut lexer = Lexer::new(function_args.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(function_args.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
-                        self.tokens
-                            .push(Tokens::Function(function_name.trim().to_string(), tokens));
+                        self.tokens.push(Tokens::Function(
+                            function_name.trim().to_string(),
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "while " => {
                         built_str.clear();
@@ -248,7 +345,8 @@ impl Lexer {
                         // make parser just get the name
                         let name_statement = format!("{} =", statements[0]);
                         // name parser
-                        let mut lexer = Lexer::new(name_statement.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(name_statement.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         tokens.remove(tokens.len() - 1);
@@ -258,7 +356,7 @@ impl Lexer {
                             exit(1);
                         }
                         let let_name: String = match &tokens[0] {
-                            Tokens::Let(name) => name,
+                            Tokens::Let(name, _) => name,
                             _ => "",
                         }
                         .to_string();
@@ -266,51 +364,97 @@ impl Lexer {
                             eprintln!("Missing let token name.");
                             exit(1);
                         }
-                        let mut lexer = Lexer::new(statements[1].trim().to_string());
+                        let mut lexer =
+                            Lexer::new(statements[1].trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
-                        self.tokens.push(Tokens::While(let_name, tokens));
+                        self.tokens.push(Tokens::While(
+                            let_name,
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "{" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::LBrace);
+                        self.tokens.push(Tokens::LBrace(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "}" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::RBrace);
+                        self.tokens.push(Tokens::RBrace(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "(" => {
                         built_str.clear();
                         let (boolean, forwardness) = self.read_until_last('(', ')');
                         self.column += forwardness;
-                        let mut lexer = Lexer::new(boolean.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(boolean.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
-                        self.tokens.push(Tokens::Parens(tokens));
+                        self.tokens.push(Tokens::Parens(
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "\"" => {
                         built_str.clear();
                         let (string, forwardness) = self.read_until("\"");
                         self.column += forwardness + 1;
-                        self.tokens.push(Tokens::DblQuote(string));
+                        self.tokens.push(Tokens::DblQuote(
+                            string,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "[" => {
                         built_str.clear();
                         let (inside_parens, forwardness) = self.read_until_last('[', ']');
 
                         self.column += forwardness;
-                        let mut lexer = Lexer::new(inside_parens.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(inside_parens.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
-                        self.tokens.push(Tokens::Bracket(tokens));
+                        self.tokens.push(Tokens::Bracket(
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "new " => {
                         built_str.clear();
@@ -321,15 +465,24 @@ impl Lexer {
                         self.column += forwardness + 1;
                         let (inside_parens, forwardness) = self.read_until_last('(', ')');
                         self.column += forwardness;
-                        let mut lexer = Lexer::new(inside_parens.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(inside_parens.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
                         // tokens.remove(tokens.len() - 1);
-                        self.tokens
-                            .push(Tokens::New(object_name.trim().to_string(), tokens));
+                        self.tokens.push(Tokens::New(
+                            object_name.trim().to_string(),
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "." => {
                         built_str.clear();
@@ -356,60 +509,135 @@ impl Lexer {
                             rev_string.replacen(';', "", 1).chars().rev().collect();
 
                         self.column += forwardness;
-                        let mut lexer = Lexer::new(statements.trim().to_string());
+                        let mut lexer =
+                            Lexer::new(statements.trim().to_string(), self.file_name.clone());
                         lexer.tokenizer();
                         let mut tokens = lexer.flush().to_vec();
                         // remove the last 2 tokens as those are just EOL EOF
                         tokens.remove(tokens.len() - 1);
                         tokens.remove(tokens.len() - 1);
-                        self.tokens.push(Tokens::Period(tokens));
+                        self.tokens.push(Tokens::Period(
+                            tokens,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                         if has_semicolon {
-                            self.tokens.push(Tokens::SemiColon);
+                            self.tokens.push(Tokens::SemiColon(self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            )));
                         }
                     }
                     "&&" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::And);
+                        self.tokens.push(Tokens::And(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "||" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Or);
+                        self.tokens.push(Tokens::Or(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "," => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Comma);
+                        self.tokens.push(Tokens::Comma(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "+" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Add);
+                        self.tokens.push(Tokens::Add(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "-" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Subtract);
+                        self.tokens.push(Tokens::Subtract(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "*" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Multiply);
+                        self.tokens.push(Tokens::Multiply(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "/" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Divide);
+                        self.tokens.push(Tokens::Divide(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "%" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Modulus);
+                        self.tokens.push(Tokens::Modulus(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     "true" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Bool(true));
+                        self.tokens.push(Tokens::Bool(
+                            true,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     "false" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::Bool(false));
+                        self.tokens.push(Tokens::Bool(
+                            false,
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        ));
                     }
                     ";" => {
                         built_str.clear();
-                        self.tokens.push(Tokens::SemiColon);
+                        self.tokens.push(Tokens::SemiColon(self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        )));
                     }
                     _ => {}
                 }
@@ -428,8 +656,15 @@ impl Lexer {
                         built_str.push(token);
                     }
                     self.column += tracked_col - 1;
-                    self.tokens
-                        .push(Tokens::Number(okay_number.trim().to_string()));
+                    self.tokens.push(Tokens::Number(
+                        okay_number.trim().to_string(),
+                        self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        ),
+                    ));
                     built_str.clear();
                 }
 
@@ -455,8 +690,15 @@ impl Lexer {
                         || (char == '!' && self.peek(2) == '=')
                         || (char == '|' && self.peek(2) == '|'))
                 {
-                    self.tokens
-                        .push(Tokens::Symbol(built_str.trim().to_string()));
+                    self.tokens.push(Tokens::Symbol(
+                        built_str.trim().to_string(),
+                        self.mk_association(
+                            &original_line,
+                            starting_column,
+                            self.column,
+                            self.line,
+                        ),
+                    ));
                     built_str.clear();
                 }
             }
@@ -486,5 +728,15 @@ impl Lexer {
         }
         println!("\n--\n");
         // println!("--\n{:?}", self.tokens);
+    }
+}
+
+pub fn empty_associate() -> CodeAssociate {
+    CodeAssociate {
+        lines: "".to_string(),
+        file: "".to_string(),
+        line: 0,
+        start_column: 0,
+        end_column: 0,
     }
 }
