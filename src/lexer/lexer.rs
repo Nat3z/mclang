@@ -40,7 +40,7 @@ impl Lexer {
         self.raw_tokens[self.line - 1][self.column - 1 + forward]
     }
 
-    pub fn read_until(&self, token: &str) -> (String, usize) {
+    pub fn read_until(&self, token: &str, associate: CodeAssociate) -> (String, usize) {
         let mut tracked_col = 0;
         let mut built_str = String::new();
         while !built_str.ends_with(token) {
@@ -55,9 +55,7 @@ impl Lexer {
         if !built_str.contains(token) {
             std_error(StdErrors::SyntaxError(
                 format!("Expected: {}", token),
-                self.raw_tokens[self.line - 1].iter().collect(),
-                self.line,
-                self.column,
+                associate,
             ));
             exit(1);
         }
@@ -78,7 +76,12 @@ impl Lexer {
         return (built_str, tracked_col);
     }
 
-    pub fn read_until_last(&self, open_token: char, opposite_token: char) -> (String, usize) {
+    pub fn read_until_last(
+        &self,
+        open_token: char,
+        opposite_token: char,
+        associate: CodeAssociate,
+    ) -> (String, usize) {
         let mut tracked_col = 0;
         let mut built_str = String::new();
         let mut counted_opens = 1;
@@ -108,9 +111,7 @@ impl Lexer {
                     "Opened token {} but did not close with {}",
                     open_token, opposite_token
                 ),
-                self.raw_tokens[self.line - 1].iter().collect(),
-                self.line,
-                self.column,
+                associate,
             ));
             exit(1);
         }
@@ -120,9 +121,7 @@ impl Lexer {
                     "Closed token {} but did not open with {}",
                     opposite_token, open_token
                 ),
-                self.raw_tokens[self.line - 1].iter().collect(),
-                self.line,
-                self.column,
+                associate,
             ));
             exit(1);
         }
@@ -160,6 +159,7 @@ impl Lexer {
             let mut built_str = String::new();
 
             let original_line: String = raw_line.iter().collect();
+            let mut starting_column = self.column;
             while self.column != raw_line.len() {
                 self.column += 1;
                 let char = self.peek(0);
@@ -168,7 +168,6 @@ impl Lexer {
                 }
                 built_str.push(char);
 
-                let starting_column = self.column;
                 match built_str.trim_start() {
                     "let " | "const " => {
                         let constant = if built_str.trim_start() == "const " {
@@ -178,7 +177,15 @@ impl Lexer {
                         };
 
                         built_str.clear();
-                        let (var_name, forwardness) = self.read_until("=");
+                        let (var_name, forwardness) = self.read_until(
+                            "=",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
 
                         let var_name = if constant {
@@ -199,7 +206,15 @@ impl Lexer {
                     }
                     "import " => {
                         built_str.clear();
-                        let (import_name, forwardness) = self.read_until(";");
+                        let (import_name, forwardness) = self.read_until(
+                            ";",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
                         self.tokens.push(Tokens::Import(
                             import_name.trim().to_string(),
@@ -293,7 +308,15 @@ impl Lexer {
                     }
                     "if " => {
                         built_str.clear();
-                        let (boolean, forwardness) = self.read_until("{");
+                        let (boolean, forwardness) = self.read_until(
+                            "{",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
                         let mut lexer =
                             Lexer::new(boolean.trim().to_string(), self.file_name.clone());
@@ -314,9 +337,26 @@ impl Lexer {
                     }
                     "fn " => {
                         built_str.clear();
-                        let (function_name, forwardness) = self.read_until("(");
+                        let (function_name, forwardness) = self.read_until(
+                            "(",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness + 1;
-                        let (function_args, forwardness) = self.read_until_last('(', ')');
+                        let (function_args, forwardness) = self.read_until_last(
+                            '(',
+                            ')',
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
                         let mut lexer =
                             Lexer::new(function_args.trim().to_string(), self.file_name.clone());
@@ -338,7 +378,15 @@ impl Lexer {
                     }
                     "while " => {
                         built_str.clear();
-                        let (statements, forwardness) = self.read_until("{");
+                        let (statements, forwardness) = self.read_until(
+                            "{",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
                         // now split statements between the first colon
                         let statements = statements.splitn(2, "=").collect::<Vec<&str>>();
@@ -401,7 +449,16 @@ impl Lexer {
                     }
                     "(" => {
                         built_str.clear();
-                        let (boolean, forwardness) = self.read_until_last('(', ')');
+                        let (boolean, forwardness) = self.read_until_last(
+                            '(',
+                            ')',
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
                         let mut lexer =
                             Lexer::new(boolean.trim().to_string(), self.file_name.clone());
@@ -422,7 +479,15 @@ impl Lexer {
                     }
                     "\"" => {
                         built_str.clear();
-                        let (string, forwardness) = self.read_until("\"");
+                        let (string, forwardness) = self.read_until(
+                            "\"",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness + 1;
                         self.tokens.push(Tokens::DblQuote(
                             string,
@@ -436,7 +501,16 @@ impl Lexer {
                     }
                     "[" => {
                         built_str.clear();
-                        let (inside_parens, forwardness) = self.read_until_last('[', ']');
+                        let (inside_parens, forwardness) = self.read_until_last(
+                            '[',
+                            ']',
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
 
                         self.column += forwardness;
                         let mut lexer =
@@ -458,12 +532,29 @@ impl Lexer {
                     }
                     "new " => {
                         built_str.clear();
-                        let (object_name, forwardness) = self.read_until("(");
+                        let (object_name, forwardness) = self.read_until(
+                            "(",
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         // add forwardness including the "(" as read_until does not include it but
                         // we know it will be there.
 
                         self.column += forwardness + 1;
-                        let (inside_parens, forwardness) = self.read_until_last('(', ')');
+                        let (inside_parens, forwardness) = self.read_until_last(
+                            '(',
+                            ')',
+                            self.mk_association(
+                                &original_line,
+                                starting_column,
+                                self.column,
+                                self.line,
+                            ),
+                        );
                         self.column += forwardness;
                         let mut lexer =
                             Lexer::new(inside_parens.trim().to_string(), self.file_name.clone());
@@ -701,15 +792,17 @@ impl Lexer {
                     ));
                     built_str.clear();
                 }
+
+                if built_str.is_empty() {
+                    starting_column = self.column;
+                }
             }
             self.tokens.push(Tokens::EOL);
             if built_str.trim().len() > 0 {
                 println!("{:?}", self.tokens);
                 std_error(StdErrors::SyntaxError(
                     "Unknown token".to_string(),
-                    raw_line.iter().collect(),
-                    self.line,
-                    self.column,
+                    empty_associate(),
                 ));
                 eprintln!("{}", built_str);
                 exit(1);

@@ -391,13 +391,13 @@ pub fn compile_into_while_loop(
     compiler: &mut Compiler,
 ) -> String {
     let mut built_str = String::new();
-    if let ASTOperation::CodeBlock(operations) = *code_block {
+    if let ASTOperation::CodeBlock(operations, associate) = *code_block {
         let mut codes: Vec<ASTOperation> = operations.clone();
         if codes.len() == 0 {
             eprintln!("Empty code block.");
             exit(1);
         }
-        if let ASTOperation::Set(mult) = operations[0].clone() {
+        if let ASTOperation::Set(mult, associate) = operations[0].clone() {
             codes.clear();
             for code in mult {
                 codes.push(code);
@@ -473,14 +473,14 @@ pub fn compile_into_if_statement(
         }
 
         // generate the code_block scope
-        if let ASTOperation::CodeBlock(code) = *code_block {
+        if let ASTOperation::CodeBlock(code, associate) = *code_block {
             let mut codes: Vec<ASTOperation> = code.clone();
 
             if codes.len() == 0 {
                 eprintln!("Empty code block.");
                 exit(1);
             }
-            if let ASTOperation::Set(mult) = code[0].clone() {
+            if let ASTOperation::Set(mult, associate) = code[0].clone() {
                 codes.clear();
                 for code in mult {
                     codes.push(code);

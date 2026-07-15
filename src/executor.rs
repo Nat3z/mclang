@@ -45,7 +45,7 @@ pub fn run() {
     // compile the code scope
     let code = compiler.prepared_files.get("code").unwrap();
 
-    let mut lexer = Lexer::new(code.to_string());
+    let mut lexer = Lexer::new(code.to_string(), "code".to_string());
     lexer.tokenizer();
     let mut ast = AST::new(lexer.flush().to_vec());
     ast.generate();

@@ -12,6 +12,7 @@ use crate::{
         operations::{ASTOperation, Operator},
     },
     compile::obj::std::VariableObject,
+    errors::error::{compile_error, CompileErrors},
     lexer::lexer::Lexer,
 };
 
@@ -723,7 +724,7 @@ impl Scope {
                     let own_function = own_function.get(name);
 
                     if own_function.is_none() {
-                        eprintln!("Function {} does not exist.", name);
+                        compile_error(CompileErrors::UnknownIdentifier(associate.clone()));
                         exit(1);
                     }
 
@@ -863,10 +864,15 @@ impl Scope {
                 let object = object.get_functions();
                 let function = object.get("instantiate");
                 if function.is_none() {
-                    eprintln!("Cannot instantiate object (No instantiate function)");
+                    compile_error(CompileErrors::InstantiationError(associate.clone()));
                     exit(1);
                 }
                 let function = function.unwrap();
+
+                if params.len() == 0 {
+                    compile_error(CompileErrors::MissingParams(associate.clone()));
+                    exit(1);
+                }
                 if let ASTOperation::Set(operations, associate) = &params[0] {
                     let mut items: Vec<Rc<dyn Object>> = vec![];
 
@@ -887,7 +893,7 @@ impl Scope {
                     }
                     return function(vec![execution], None);
                 } else {
-                    eprintln!("Missing parameters.");
+                    compile_error(CompileErrors::MissingParams(associate.clone()));
                     exit(1);
                 }
             }
